@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-02 11:18",
+ "updated": "2026-11-02 11:32",
  "latest": "2026-10-30",
  "panels": {
   "M1": {
@@ -68,6 +68,39 @@
    "verdict": null,
    "howto": "转负=曲线倒挂，历次衰退前都出现，领先 6-18 个月。"
   },
+  "M13": {
+   "title": "跨资产相关性（风险偏好切换）",
+   "group": "情绪 / 风险",
+   "asof": "2026-10-30",
+   "type": "line",
+   "current": 0.203,
+   "pct": null,
+   "unit": "",
+   "verdict": null,
+   "howto": "SPY-TLT 转正=股债同跌(避险失效)；负值才是常态对冲。"
+  },
+  "M14": {
+   "title": "VIX 期限结构（VIX / VIX3M）",
+   "group": "情绪 / 风险",
+   "asof": "2026-10-29",
+   "type": "line",
+   "current": 0.888,
+   "pct": 53.0,
+   "unit": "倍",
+   "verdict": null,
+   "howto": ">1 短端恐慌(期限倒挂)，常伴急跌；<0.85 过度自满。"
+  },
+  "M15": {
+   "title": "收益率曲线（10Y − 3M）",
+   "group": "情绪 / 风险",
+   "asof": "2026-10-30",
+   "type": "line",
+   "current": 0.78,
+   "pct": 35.3,
+   "unit": "%",
+   "verdict": null,
+   "howto": "<0 倒挂=衰退预警；Fed 常用 10Y-3M 而非 10Y-2Y。"
+  },
   "M7": {
    "title": "全球股市地图（归一化）",
    "group": "全球 / 世界经济",
@@ -112,17 +145,6 @@
    "verdict": null,
    "howto": "Sahm 偏离 -0.10pt（>0.5 触发衰退信号）；Sahm 规则：3 月均失业比前 12 月低点抬升 >0.5pt 即触发衰退信号。"
   },
-  "M11": {
-   "title": "通胀（CPI 同比）",
-   "group": "宏观景气",
-   "asof": "2026-09-01",
-   "type": "line",
-   "current": 4.02,
-   "pct": 87.5,
-   "unit": "%",
-   "verdict": null,
-   "howto": ">5% 通胀过热；向 2% 回落=软着陆路径。"
-  },
   "M12": {
    "title": "衰退信号汇总",
    "group": "宏观景气",
@@ -134,16 +156,82 @@
    "verdict": "暂无衰退信号",
    "howto": "≥2 项触发视为衰退预警共振；单一信号多为噪音。"
   },
-  "M13": {
-   "title": "跨资产相关性（风险偏好切换）",
+  "M16": {
+   "title": "初请失业金（4周均）",
    "group": "宏观景气",
-   "asof": "2026-10-30",
+   "asof": "2026-10-24",
    "type": "line",
-   "current": 0.203,
-   "pct": null,
+   "current": 196750.0,
+   "pct": 0.1,
+   "unit": "人",
+   "verdict": null,
+   "howto": "4 周均持续抬升=劳动力走弱；同比>+15% 需警惕。"
+  },
+  "M19": {
+   "title": "实际 GDP 增速（季调环比折年）",
+   "group": "宏观景气",
+   "asof": "2026-07-01",
+   "type": "line",
+   "current": 3.4,
+   "pct": 72.0,
+   "unit": "%",
+   "verdict": null,
+   "howto": "<0 收缩；持续<1 增长乏力。"
+  },
+  "M20": {
+   "title": "密歇根消费者信心",
+   "group": "宏观景气",
+   "asof": "2026-09-01",
+   "type": "line",
+   "current": 48.1,
+   "pct": 0.6,
    "unit": "",
    "verdict": null,
-   "howto": "SPY-TLT 转正=股债同跌(避险失效)；负值才是常态对冲。"
+   "howto": "<70 信心低迷，预示消费走弱。"
+  },
+  "M11": {
+   "title": "通胀（CPI 同比）",
+   "group": "通胀 / 利率",
+   "asof": "2026-09-01",
+   "type": "line",
+   "current": 4.02,
+   "pct": 87.5,
+   "unit": "%",
+   "verdict": null,
+   "howto": ">5% 通胀过热；向 2% 回落=软着陆路径。"
+  },
+  "M17": {
+   "title": "核心 PCE 同比",
+   "group": "通胀 / 利率",
+   "asof": "2026-09-01",
+   "type": "line",
+   "current": 3.12,
+   "pct": 88.8,
+   "unit": "%",
+   "verdict": null,
+   "howto": "Fed 2% 目标的官方口径；>3% 通胀顽固。"
+  },
+  "M18": {
+   "title": "5年通胀预期（盈亏平衡）",
+   "group": "通胀 / 利率",
+   "asof": "2026-10-30",
+   "type": "line",
+   "current": 2.46,
+   "pct": 83.4,
+   "unit": "%",
+   "verdict": null,
+   "howto": "市场定价的通胀预期，领先 CPI；>2.5% 预期升温。"
+  },
+  "M21": {
+   "title": "联邦基金利率（有效）",
+   "group": "通胀 / 利率",
+   "asof": "2026-10-29",
+   "type": "line",
+   "current": 3.88,
+   "pct": 75.2,
+   "unit": "%",
+   "verdict": null,
+   "howto": "政策利率；高位=紧缩、压制风险资产。"
   }
  }
 }
