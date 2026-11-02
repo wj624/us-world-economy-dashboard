@@ -1,84 +1,7 @@
 {
- "updated": "2026-11-02 10:19",
+ "updated": "2026-11-02 10:44",
  "latest": "2026-10-30",
  "panels": {
-  "M1": {
-   "title": "巴菲特指标（市值 / GDP，近似）",
-   "group": "估值",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 212.43,
-   "pct": 88,
-   "unit": "%",
-   "verdict": null,
-   "howto": ">100% 偏贵；>130% 危险区。"
-  },
-  "M2": {
-   "title": "S&P500 偏离五年均线",
-   "group": "估值",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 28.77,
-   "pct": 72,
-   "unit": "%",
-   "verdict": null,
-   "howto": ">+10% 偏贵；<-20% 底部。"
-  },
-  "M3": {
-   "title": "实际利率（10Y 美债 − CPI 同比）",
-   "group": "估值",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 0.31,
-   "pct": 61,
-   "unit": "%",
-   "verdict": null,
-   "howto": "实际利率走高=收紧。"
-  },
-  "M1b": {
-   "title": "席勒 CAPE（周期调整市盈率）",
-   "group": "估值",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 30.22,
-   "pct": 91,
-   "unit": "倍",
-   "verdict": null,
-   "howto": ">30 高估。"
-  },
-  "M4": {
-   "title": "VIX 恐慌指数",
-   "group": "情绪 / 风险",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 29.32,
-   "pct": 42,
-   "unit": "",
-   "verdict": null,
-   "howto": ">30 恐慌；<15 自满。"
-  },
-  "M5": {
-   "title": "信用利差（BAA − 10Y 美债）",
-   "group": "情绪 / 风险",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 3.64,
-   "pct": 38,
-   "unit": "%",
-   "verdict": null,
-   "howto": "走阔=信用收缩。"
-  },
-  "M6": {
-   "title": "收益率曲线倒挂（10Y − 2Y）",
-   "group": "情绪 / 风险",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 1.19,
-   "pct": 35,
-   "unit": "%",
-   "verdict": null,
-   "howto": "转负=倒挂。"
-  },
   "M7": {
    "title": "全球股市地图（归一化）",
    "group": "全球 / 世界经济",
@@ -88,18 +11,7 @@
    "pct": null,
    "unit": "基准=100",
    "verdict": null,
-   "howto": "谁在上方=资本更青睐；EEM 落后常对应美元强。"
-  },
-  "M8": {
-   "title": "美元指数（广义贸易加权）",
-   "group": "全球 / 世界经济",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 114.37,
-   "pct": 55,
-   "unit": "",
-   "verdict": null,
-   "howto": "强美元压制新兴市场。"
+   "howto": "谁在上方=资本更青睐；EEM 落后常对应美元强/避险。"
   },
   "M9": {
    "title": "避险资产温度计（黄金/长债/商品）",
@@ -110,51 +22,18 @@
    "pct": null,
    "unit": "基准=100",
    "verdict": null,
-   "howto": "黄金上行=避险；商品上行=通胀交易。"
-  },
-  "M10": {
-   "title": "失业率 + Sahm 规则",
-   "group": "宏观景气",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 5.08,
-   "pct": 30,
-   "unit": "%",
-   "verdict": null,
-   "howto": "Sahm 偏离 +0.12pt。"
-  },
-  "M11": {
-   "title": "通胀（CPI 同比）",
-   "group": "宏观景气",
-   "asof": "2026-10-30",
-   "type": "line",
-   "current": 4.41,
-   "pct": 48,
-   "unit": "%",
-   "verdict": null,
-   "howto": "向 2% 回落=软着陆。"
-  },
-  "M12": {
-   "title": "衰退信号汇总",
-   "group": "宏观景气",
-   "asof": "2026-10-30",
-   "type": "status",
-   "current": null,
-   "pct": null,
-   "unit": "",
-   "verdict": "部分预警",
-   "howto": "≥2 项触发视为衰退预警共振。"
+   "howto": "黄金上行=避险/实际利率下行；商品上行=通胀交易。"
   },
   "M13": {
    "title": "跨资产相关性（风险偏好切换）",
    "group": "宏观景气",
    "asof": "2026-10-30",
    "type": "line",
-   "current": 0.24,
+   "current": 0.203,
    "pct": null,
    "unit": "",
    "verdict": null,
-   "howto": "SPY-TLT 转正=避险失效。"
+   "howto": "SPY-TLT 转正=股债同跌(避险失效)；负值才是常态对冲。"
   }
  }
 }
