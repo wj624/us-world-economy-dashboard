@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>美股 / 世界经济温度计</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1f2d3d; --muted:#7a8aa0;
+    --line:#e3e8ef; --blue:#2980b9; --red:#c0392b; --green:#27ae60; --amber:#e67e22;
+    --shadow:0 1px 3px rgba(20,40,80,.08),0 6px 18px rgba(20,40,80,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft Yahei",sans-serif;
+       -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1080px;margin:0 auto;padding:18px 14px 60px;}
+  header.top{background:linear-gradient(135deg,#1f3a5f,#2c5a8a);color:#fff;border-radius:16px;
+             padding:22px 22px;box-shadow:var(--shadow);margin-bottom:18px;}
+  header.top h1{margin:0 0 4px;font-size:22px;letter-spacing:.5px}
+  header.top .sub{opacity:.85;font-size:13px}
+  header.top .meta{margin-top:12px;font-size:12px;opacity:.9;display:flex;gap:16px;flex-wrap:wrap}
+  header.top .meta b{font-weight:600}
+  .group{margin:26px 0 8px;display:flex;align-items:center;gap:10px}
+  .group h2{margin:0;font-size:17px;color:var(--ink)}
+  .group .bar{height:3px;flex:1;background:linear-gradient(90deg,var(--blue),transparent);border-radius:2px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px;
+        box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:300px}
+  .phead{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .ptitle{font-size:14.5px;font-weight:700;line-height:1.35}
+  .psub{display:block;font-weight:400;font-size:11.5px;color:var(--muted);margin-top:2px}
+  .badges{text-align:right;white-space:nowrap}
+  .cur{display:block;font-size:19px;font-weight:800;color:var(--ink)}
+  .cur small{font-size:11px;font-weight:600;color:var(--muted)}
+  .pct{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border-radius:20px}
+  .p-hi{background:#fdecea;color:var(--red)}
+  .p-mid{background:#fef3e2;color:var(--amber)}
+  .p-lo{background:#e9f7ef;color:var(--green)}
+  .chart{width:100%;height:260px;margin-top:8px}
+  .note{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.5;
+        border-top:1px dashed var(--line);padding-top:8px}
+  .note b{color:var(--ink)}
+  .updated{font-size:10.5px;color:#aab4c4;margin-top:4px}
+  .verdict{margin:10px 0;padding:12px;border-radius:10px;font-weight:700;font-size:15px;text-align:center;color:#fff}
+  .fields{list-style:none;padding:0;margin:6px 0 0;font-size:12.5px}
+  .fields li{display:flex;justify-content:space-between;padding:6px 2px;border-bottom:1px solid var(--line)}
+  .fields .on{color:var(--red);font-weight:700}
+  .fields .off{color:var(--green)}
+  footer{margin-top:34px;text-align:center;font-size:11px;color:var(--muted);line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1 id="t-title">美股 / 世界经济温度计</h1>
+    <div class="sub" id="t-sub"></div>
+    <div class="meta">
+      <span>数据更新：<b id="t-updated">—</b></span>
+      <span>最新行情日：<b id="t-latest">—</b></span>
+      <span>数据源：<b id="t-src">FRED · Yahoo Finance</b></span>
+    </div>
+  </header>
+  <div id="root"></div>
+  <footer>
+    数据源：FRED（美联储经济数据库）· Yahoo Finance（美股/全球 ETF 日线）· 估值含 FRED 自算巴菲特指标<br/>
+    本看板仅作公开市场数据的可视化复现，<b>不构成任何投资建议</b>。每日自动更新。
+  </footer>
+</div>
+
+<!--ECHARTS_HERE-->
+<!--DATA_HERE-->
+
+<script>
+(function(){
+  var DATA = window.DATA || {};
+  var bands = DATA.bands || [];
+  document.getElementById('t-title').textContent = (DATA.meta&&DATA.meta.title)||'美股 / 世界经济温度计';
+  document.getElementById('t-sub').textContent  = (DATA.meta&&DATA.meta.subtitle)||'';
+  document.getElementById('t-updated').textContent = DATA.updated||'—';
+  document.getElementById('t-latest').textContent  = DATA.latest||'—';
+
+  function fmt(v,nd){
+    if(v==null||isNaN(v)) return '—';
+    nd=(nd==null)?2:nd;
+    return Number(v).toLocaleString('en-US',{minimumFractionDigits:nd,maximumFractionDigits:nd});
+  }
+  function pctClass(p){ return p>=75?'p-hi':(p>=40?'p-mid':'p-lo'); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+
+  var root=document.getElementById('root');
+  (DATA.groups||[]).forEach(function(g){
+    var gh=document.createElement('div'); gh.className='group';
+    gh.innerHTML='<h2>'+esc(g.name)+'</h2><div class="bar"></div>';
+    root.appendChild(gh);
+    var grid=document.createElement('div'); grid.className='grid'; root.appendChild(grid);
+    (g.panels||[]).forEach(function(p){ grid.appendChild(renderCard(p)); });
+  });
+
+  function renderCard(p){
+    var card=document.createElement('div'); card.className='card';
+    var head=document.createElement('div'); head.className='phead';
+    head.innerHTML='<div class="ptitle">'+esc(p.id)+' · '+esc(p.title)+
+                   '<span class="psub">'+esc(p.subtitle||'')+'</span></div>';
+    var badges=document.createElement('div'); badges.className='badges';
+    var b='';
+    if(p.current!=null) b+='<span class="cur">'+fmt(p.current,p.decimals)+' <small>'+(p.unit||'')+'</small></span>';
+    if(p.pct!=null)     b+='<span class="pct '+pctClass(p.pct)+'">分位 '+p.pct+'%</span>';
+    badges.innerHTML=b; head.appendChild(badges);
+    card.appendChild(head);
+
+    if(p.type==='status'){ renderStatus(p,card); }
+    else { var div=document.createElement('div'); div.className='chart'; card.appendChild(div);
+           setTimeout(function(){ drawChart(div,p); }, 0); }
+    var note=document.createElement('div'); note.className='note'; note.innerHTML=esc(p.note||'');
+    card.appendChild(note);
+    if(p.updated){ var u=document.createElement('div'); u.className='updated';
+                   u.textContent='数据截至 '+p.updated; card.appendChild(u); }
+    return card;
+  }
+
+  function renderStatus(p,card){
+    var v=document.createElement('div'); v.className='verdict';
+    v.style.background=(p.verdict_color||'#888'); v.textContent=p.verdict||'—'; card.appendChild(v);
+    if(p.fields&&p.fields.length){
+      var ul=document.createElement('ul'); ul.className='fields';
+      p.fields.forEach(function(f){
+        var li=document.createElement('li');
+        li.innerHTML='<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:'+(f.on?'#c0392b':'#27ae60')+'"></span>'+esc(f.name)+'</span>'+
+                     '<span class="'+(f.on?'on':'off')+'">'+(f.on?'触发':'正常')+' · '+esc(f.detail||'')+'</span>';
+        ul.appendChild(li);
+      });
+      card.appendChild(ul);
+    }
+  }
+
+  function drawChart(div,p){
+    if(typeof echarts==='undefined'){ div.textContent='ECharts 未加载'; return; }
+    var chart=echarts.init(div,null,{renderer:'canvas'});
+    var series=[];
+    (p.series||[]).forEach(function(s){
+      series.push({name:s.name,type:'line',showSymbol:false,smooth:false,lineStyle:{width:1.8},data:s.values});
+    });
+    if(p.refs&&p.refs.length&&series.length){
+      series[0].markLine={silent:true,symbol:'none',lineStyle:{type:'dashed',color:'#b0b8c4'},
+        label:{formatter:function(o){return o.name;},color:'#7a8aa0',fontSize:10},
+        data:p.refs.map(function(r){return {name:r.label,yAxis:r.value,lineStyle:{color:r.color||'#b0b8c4'}};})};
+    }
+    if(bands.length&&series.length){
+      series[0].markArea={silent:true,itemStyle:{color:'rgba(192,57,43,.06)'},
+        data:bands.map(function(b){return [{xAxis:b[0]},{xAxis:b[1]}];})};
+    }
+    chart.setOption({
+      grid:{left:48,right:14,top:24,bottom:26},
+      tooltip:{trigger:'axis',confine:true,valueFormatter:function(v){return fmt(v,p.decimals);}},
+      legend:{show:(p.series||[]).length>1,top:0,right:6,textStyle:{fontSize:10},itemWidth:14,itemHeight:8},
+      xAxis:{type:'category',data:p.dates,boundaryGap:false,
+             axisLabel:{fontSize:9,color:'#9aa6b5',formatter:function(v){return v?v.slice(0,7):'';}},
+             axisLine:{lineStyle:{color:'#dfe5ee'}}},
+      yAxis:{type:'value',scale:true,axisLabel:{fontSize:9,color:'#9aa6b5'},
+             splitLine:{lineStyle:{color:'#eef2f7'}}},
+      series:series
+    });
+    window.addEventListener('resize',function(){chart.resize();});
+  }
+})();
+</script>
+</body>
+</html>
