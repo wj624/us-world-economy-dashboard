@@ -36,7 +36,9 @@ TRIES = 2
 HTTP_TIMEOUT = 15          # 单请求上限；FRED 串行、价格并发，整体耗时有界
 RAW = {}                   # 预取缓存：('fred',id)/('price',name)/('multpl',ep) -> 列表
 FRED_IDS = ["NASDAQCOM", "SP500", "DGS10", "CPIAUCSL", "VIXCLS",
-            "BAA10Y", "T10Y2Y", "DTWEXBGS", "UNRATE", "USREC"]
+            "BAA10Y", "T10Y2Y", "DTWEXBGS", "UNRATE", "USREC",
+            "VXVCLS", "T10Y3M", "ICSA", "PCEPILFE", "T5YIE",
+            "A191RL1Q225SBEA", "UMCSENT", "DFF"]
 PRICE_NAMES = ["SPY 美股大盘", "QQQ 美股科技", "VXUS 发达(美外)", "EEM 新兴市场",
                "EFA 发达国际", "GLD 黄金", "TLT 长债", "DBC 商品"]
 
@@ -123,7 +125,7 @@ _TTL_LOADED = False
 
 
 def _today():
-    return dt.datetime.utcnow().strftime("%Y-%m-%d")
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
 
 
 def _force_refresh():
@@ -828,6 +830,114 @@ def build_correlation():
     }
 
 
+# ---------------------------------------------------------------- 新增面板(第二批·全 FRED)
+def build_vix_term():
+    """VIX 期限结构 = VIX / VIX3M。>1 说明短端恐慌、曲线倒挂。"""
+    vix = fetch_fred("VIXCLS"); vix3 = fetch_fred("VXVCLS")
+    if not vix or not vix3:
+        return None
+    m3 = dict(vix3)
+    pairs = [(d, v / m3[d]) for d, v in vix if d in m3 and m3[d]]
+    if len(pairs) < 100:
+        return None
+    return panel_line("M14", "VIX 期限结构（VIX / VIX3M）",
+                      "比值>1=短端恐慌、期限倒挂", pairs, since="2010-01-01", unit="倍",
+                      pct_baseline="2010-01-01", decimals=3,
+                      refs=[{"value": 1.0, "label": "倒挂线(1.0)", "color": "#c0392b"}],
+                      note=">1 短端恐慌(期限倒挂)，常伴急跌；<0.85 过度自满。")
+
+
+def build_curve3m():
+    """10Y − 3M 利差，Fed 官方更看重的倒挂口径。"""
+    raw = fetch_fred("T10Y3M")
+    if not raw:
+        return None
+    return panel_line("M15", "收益率曲线（10Y − 3M）",
+                      "Fed 更看重的倒挂口径", raw, since="2005-01-01", unit="%",
+                      pct_baseline="2000-01-01", decimals=2,
+                      refs=[{"value": 0, "label": "倒挂线(0)", "color": "#c0392b"}],
+                      note="<0 倒挂=衰退预警；Fed 常用 10Y-3M 而非 10Y-2Y。")
+
+
+def build_claims():
+    """初请失业金 4 周均（周频，劳动力市场领先指标）。"""
+    raw = fetch_fred("ICSA")
+    if len(raw) < 60:
+        return None
+    vals = [v for _, v in raw]
+    ma4 = [(raw[i][0], sum(vals[i - 3:i + 1]) / 4.0) for i in range(3, len(raw))]
+    ic_yoy = None
+    if len(ma4) >= 53 and ma4[-53][1]:
+        ic_yoy = (ma4[-1][1] / ma4[-53][1] - 1) * 100
+    p = panel_line("M16", "初请失业金（4周均）", "周频劳动力市场领先指标",
+                   ma4, since="2005-01-01", unit="人", pct_baseline="2000-01-01", decimals=0,
+                   refs=[{"value": 300000, "label": "30万", "color": "#7f8c8d"}],
+                   note="4 周均持续抬升=劳动力走弱；同比>+15% 需警惕。")
+    if p:
+        p["ic_yoy"] = round(ic_yoy, 1) if ic_yoy is not None else None
+    return p
+
+
+def build_core_pce():
+    """核心 PCE 同比（Fed 通胀目标口径）。"""
+    raw = fetch_fred("PCEPILFE")
+    if len(raw) < 13:
+        return None
+    return panel_line("M17", "核心 PCE 同比", "剔除食品能源，Fed 通胀目标口径",
+                      yoy(raw), since="2005-01-01", unit="%", pct_baseline="2000-01-01",
+                      refs=[{"value": 2, "label": "目标(2%)", "color": "#27ae60"},
+                            {"value": 3, "label": "偏高(>3)", "color": "#c0392b"}],
+                      note="Fed 2% 目标的官方口径；>3% 通胀顽固。")
+
+
+def build_breakeven():
+    """5 年通胀预期（国债盈亏平衡）。"""
+    raw = fetch_fred("T5YIE")
+    if not raw:
+        return None
+    return panel_line("M18", "5年通胀预期（盈亏平衡）", "债市定价的未来 5 年通胀",
+                      raw, since="2005-01-01", unit="%", pct_baseline="2003-01-01",
+                      refs=[{"value": 2, "label": "目标(2%)", "color": "#27ae60"},
+                            {"value": 2.5, "label": "升温(>2.5)", "color": "#e67e22"}],
+                      note="市场定价的通胀预期，领先 CPI；>2.5% 预期升温。")
+
+
+def build_gdp():
+    """实际 GDP 增速（季调环比折年）。"""
+    raw = fetch_fred("A191RL1Q225SBEA")
+    if not raw:
+        return None
+    return panel_line("M19", "实际 GDP 增速（季调环比折年）", "美国经济基本面",
+                      raw, since="2005-01-01", unit="%", pct_baseline="2000-01-01",
+                      refs=[{"value": 0, "label": "零增长", "color": "#c0392b"},
+                            {"value": 2, "label": "趋势(2%)", "color": "#7f8c8d"}],
+                      note="<0 收缩；持续<1 增长乏力。")
+
+
+def build_sentiment():
+    """密歇根消费者信心。"""
+    raw = fetch_fred("UMCSENT")
+    if not raw:
+        return None
+    return panel_line("M20", "密歇根消费者信心", "需求端景气", raw, since="2005-01-01",
+                      unit="", pct_baseline="2000-01-01", decimals=1,
+                      refs=[{"value": 80, "label": "中性(80)", "color": "#7f8c8d"},
+                            {"value": 70, "label": "低迷(<70)", "color": "#c0392b"}],
+                      note="<70 信心低迷，预示消费走弱。")
+
+
+def build_fedfunds():
+    """联邦基金有效利率（政策利率水平）。"""
+    raw = fetch_fred("DFF")
+    if not raw:
+        return None
+    return panel_line("M21", "联邦基金利率（有效）", "美联储政策利率水平",
+                      raw, since="2005-01-01", unit="%", pct_baseline="2000-01-01",
+                      refs=[{"value": 5, "label": "紧缩(>5)", "color": "#c0392b"},
+                            {"value": 0, "label": "零利率", "color": "#27ae60"}],
+                      note="政策利率；高位=紧缩、压制风险资产。")
+
+
 # ---------------------------------------------------------------- 主流程
 def prefetch_all():
     """价格并发（不同主机，互不影响）；FRED 串行（并发会触发 FRED 限流/超时）。
@@ -866,6 +976,109 @@ def prefetch_all():
     log(f"预取完成：{okc}/{total} 有数据")
 
 
+def _al(level, text):
+    return {"on": level in ("high", "mid"), "level": level, "text": text}
+
+
+def _num(p, key="current"):
+    v = p.get(key)
+    return v if isinstance(v, (int, float)) else None
+
+
+# 超标判定：返回 _al(...) 或 None。阈值参考各面板 refs。
+ALERT_RULES = {
+    "M1": lambda p: _al("high", f"纳指长期估值偏贵 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 20
+        else (_al("mid", f"纳指估值偏高 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 10 else None),
+    "M2": lambda p: _al("high", f"S&P 偏离5年线 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 15
+        else (_al("mid", f"S&P 高于5年线 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 10 else None),
+    "M3": lambda p: _al("mid", f"实际利率偏紧 {_num(p):.2f}%") if _num(p) is not None and _num(p) > 2 else None,
+    "M4": lambda p: _al("high", f"VIX 恐慌 {_num(p):.1f}") if _num(p) is not None and _num(p) > 30
+        else (_al("mid", f"VIX 自满 {_num(p):.1f}") if _num(p) is not None and _num(p) < 15 else None),
+    "M5": lambda p: _al("high", f"信用利差紧张 {_num(p):.2f}%") if _num(p) is not None and _num(p) > 3 else None,
+    "M6": lambda p: _al("high", f"收益率曲线倒挂 {_num(p):.2f}%") if _num(p) is not None and _num(p) < 0 else None,
+    "M8": lambda p: _al("mid", f"强美元 {_num(p):.1f}") if _num(p) is not None and _num(p) > 128 else None,
+    "M10": lambda p: _al("high", "失业率触发 Sahm 衰退信号") if (p.get("sahm") or 0) > 0.5
+        else (_al("mid", f"失业率偏高 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 5 else None),
+    "M11": lambda p: _al("high", f"CPI 过热 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 5
+        else (_al("mid", f"CPI 偏高 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 3 else None),
+    "M13": lambda p: _al("mid", "股债同跌，避险失效") if _num(p) is not None and _num(p) > 0.3 else None,
+    "M14": lambda p: _al("high", "VIX 期限倒挂（短端恐慌）") if _num(p) is not None and _num(p) > 1.0 else None,
+    "M15": lambda p: _al("high", "10Y-3M 倒挂（衰退预警）") if _num(p) is not None and _num(p) < 0 else None,
+    "M16": lambda p: _al("mid", f"初请失业金同比 {p.get('ic_yoy'):+.0f}%，劳动力走弱")
+        if p.get("ic_yoy") is not None and p.get("ic_yoy") > 15 else None,
+    "M17": lambda p: _al("high", f"核心PCE {_num(p):.1f}%（高于3%）") if _num(p) is not None and _num(p) > 3 else None,
+    "M18": lambda p: _al("mid", f"通胀预期升温 {_num(p):.2f}%") if _num(p) is not None and _num(p) > 2.5 else None,
+    "M19": lambda p: _al("high", f"GDP 收缩 {_num(p):.1f}%") if _num(p) is not None and _num(p) < 0
+        else (_al("mid", f"GDP 增速低 {_num(p):.1f}%") if _num(p) is not None and _num(p) < 1 else None),
+    "M20": lambda p: _al("mid", f"消费者信心低迷 {_num(p):.0f}") if _num(p) is not None and _num(p) < 70 else None,
+    "M21": lambda p: _al("mid", f"政策利率偏高 {_num(p):.2f}%") if _num(p) is not None and _num(p) > 5 else None,
+}
+
+
+def _alert_for(p):
+    pid = p["id"]
+    if pid == "M12":
+        v = p.get("verdict") or ""
+        if "活跃" in v:
+            return _al("high", "衰退信号共振")
+        if "预警" in v:
+            return _al("mid", "部分衰退预警")
+        return {"on": False, "level": "", "text": ""}
+    rule = ALERT_RULES.get(pid)
+    if rule:
+        try:
+            r = rule(p)
+            if r:
+                return r
+        except Exception:
+            pass
+    return {"on": False, "level": "", "text": ""}
+
+
+def _compute_summary(groups):
+    """顶部总览：综合温度 0-100（估值/情绪/信用/通胀分位合成）+ 超标清单。"""
+    panels = {p["id"]: p for g in groups for p in g["panels"]}
+
+    sev = {"high": 0, "mid": 1}
+    alerts = [{"id": p["id"], "title": p["title"], "level": p["alert"]["level"],
+               "text": p["alert"]["text"]}
+              for p in panels.values() if (p.get("alert") or {}).get("on")]
+    alerts.sort(key=lambda x: sev.get(x["level"], 2))
+
+    def pct(i):
+        p = panels.get(i)
+        return p.get("pct") if p else None
+
+    comps = []
+    def add(name, vals, w):
+        vs = [v for v in vals if isinstance(v, (int, float))]
+        if vs:
+            comps.append({"name": name, "score": round(sum(vs) / len(vs)), "w": w})
+    add("估值", [pct("M1"), pct("M2")], 0.35)
+    add("情绪", [pct("M4")], 0.25)
+    add("信用", [pct("M5")], 0.20)
+    add("通胀", [pct("M11")], 0.20)
+
+    tw = sum(c["w"] for c in comps) or 1
+    score = round(sum(c["score"] * c["w"] for c in comps) / tw) if comps else None
+    if score is None:
+        label, color = "—", "#888"
+    elif score < 20:
+        label, color = "冰冷", "#2980b9"
+    elif score < 40:
+        label, color = "偏冷", "#27ae60"
+    elif score < 60:
+        label, color = "中性", "#7f8c8d"
+    elif score < 80:
+        label, color = "偏热", "#e67e22"
+    else:
+        label, color = "过热", "#c0392b"
+
+    headline = (f"{len(alerts)} 项指标超标" if alerts else "暂无指标超标")
+    return {"score": score, "label": label, "color": color, "components": comps,
+            "alerts": alerts, "headline": headline}
+
+
 def main():
     log("开始抓取并计算面板 …")
     prefetch_all()
@@ -873,9 +1086,12 @@ def main():
 
     plan = [
         ("估值", [build_buffett, build_sp_anchor, build_real_rate, build_cape]),
-        ("情绪 / 风险", [build_vix, build_credit, build_curve]),
+        ("情绪 / 风险", [build_vix, build_credit, build_curve, build_correlation,
+                        build_vix_term, build_curve3m]),
         ("全球 / 世界经济", [build_global_map, build_dollar, build_commodities]),
-        ("宏观景气", [build_unemployment, build_inflation, build_recession, build_correlation]),
+        ("宏观景气", [build_unemployment, build_recession, build_claims,
+                     build_gdp, build_sentiment]),
+        ("通胀 / 利率", [build_inflation, build_core_pce, build_breakeven, build_fedfunds]),
     ]
     for gname, builders in plan:
         panels = []
@@ -893,6 +1109,12 @@ def main():
                 log(f"  ✗ {b.__name__} 无数据，跳过")
         if panels:
             groups.append({"name": gname, "panels": panels})
+
+    # 超标提醒 + 顶部总览
+    for g in groups:
+        for p in g["panels"]:
+            p["alert"] = _alert_for(p)
+    summary = _compute_summary(groups)
 
     # 衰退阴影带
     bands = []
@@ -914,6 +1136,7 @@ def main():
     out = {
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "latest": latest, "asof": asof, "groups": groups, "bands": bands,
+        "summary": summary,
         "meta": {"title": "美股 / 世界经济温度计",
                  "subtitle": "13 个面板 · 估值 / 情绪 / 全球 / 宏观",
                  "sources": ["FRED", "Yahoo Finance", "Stooq", "multpl(可选)"]},

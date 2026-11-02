@@ -72,6 +72,20 @@ def build(d):
     A("3. **结论需同时引用至少两个方向**（估值 + 情绪 + 全球/宏观），单方向一律标注「证据不足」。")
     A("4. 输出建议：①150 字内定性；②支持/反对两栏证据；③一句话提示；④明确「不构成投资建议」。")
     A("")
+    s = d.get("summary") or {}
+    if s:
+        A("## 总览与超标提示")
+        A("")
+        A(f"- **综合温度**：{s.get('score', '—')}/100（{s.get('label', '')}）　{s.get('headline', '')}")
+        comps = "、".join(f"{c['name']}{c['score']}" for c in (s.get("components") or []))
+        if comps:
+            A(f"- 分量：{comps}（0–100，越高越紧绷）")
+        for a in (s.get("alerts") or []):
+            lv = "🔴" if a.get("level") == "high" else "🟠"
+            A(f"- {lv} {a.get('id')} {a.get('title')}：{a.get('text')}")
+        if not (s.get("alerts") or []):
+            A("- ✅ 各项均在阈值内")
+        A("")
     A("## 当日读数")
     A("")
     for g in groups:
