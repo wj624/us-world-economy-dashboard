@@ -129,7 +129,7 @@ out = {"updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
        "latest": dates[-1], "asof": {p["id"]: dates[-1] for g in groups for p in g["panels"]},
        "groups": groups, "bands": bands,
        "meta": {"title": "美股 / 世界经济温度计（样例）",
-                "subtitle": "13 个面板 · 估值 / 情绪 / 全球 / 宏观",
+                "subtitle": "28 个面板 · 估值 / 情绪 / 全球 / 宏观景气 / 领先指标 / 通胀利率",
                 "sources": ["FRED", "Yahoo Finance", "Stooq", "multpl(可选)"]}}
 
 with open("data.json", "w", encoding="utf-8") as f:

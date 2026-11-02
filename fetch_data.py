@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 US / World Economy Dashboard · 指标自动计算引擎
-多源抓取(免费/免key) -> 本地缓存(失败回退) -> 计算 13 个面板 -> 输出 data.json
+多源抓取(免费/免key) -> 本地缓存(失败回退) -> 计算 28 个面板 -> 输出 data.json
 
 数据源（按"服务器端可靠性"排序）：
   FRED        : 政府经济数据库，无 bot 墙，GitHub Actions 最稳。宏观/估值主力。
@@ -1330,7 +1330,7 @@ def main():
         "latest": latest, "asof": asof, "groups": groups, "bands": bands,
         "summary": summary, "clock": clock,
         "meta": {"title": "美股 / 世界经济温度计",
-                 "subtitle": "13 个面板 · 估值 / 情绪 / 全球 / 宏观",
+                 "subtitle": "28 个面板 · 估值 / 情绪 / 全球 / 宏观景气 / 领先指标 / 通胀利率",
                  "sources": ["FRED", "Yahoo Finance", "Stooq", "multpl(可选)"]},
     }
     _atomic_write("data.json", json.dumps(out, ensure_ascii=False))
