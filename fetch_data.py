@@ -32,8 +32,13 @@ CTX.check_hostname = False
 CTX.verify_mode = ssl.CERT_NONE
 
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "").strip()
-TRIES = 3
-HTTP_TIMEOUT = 25
+TRIES = 2
+HTTP_TIMEOUT = 10          # 单请求上限；配合并发预取，整体耗时有界
+RAW = {}                   # 预取缓存：('fred',id)/('price',name)/('multpl',ep) -> 列表
+FRED_IDS = ["WILL5000INDFC", "GDP", "SP500", "DGS10", "CPIAUCSL",
+            "VIXCLS", "BAA10Y", "T10Y2Y", "DTWEXBGS", "UNRATE", "USREC"]
+PRICE_NAMES = ["SPY 美股大盘", "QQQ 美股科技", "VXUS 发达(美外)", "EEM 新兴市场",
+               "EFA 发达国际", "GLD 黄金", "TLT 长债", "DBC 商品"]
 
 # 逻辑名 -> (Yahoo 代码, Stooq 代码)
 PRICE = {
@@ -132,6 +137,8 @@ def _parse_fred_csv(raw):
 
 def fetch_fred(series_id):
     """FRED: 有 key 走 API(快)，否则 fredgraph.csv 免 key；失败回退缓存。"""
+    if ("fred", series_id) in RAW:
+        return RAW[("fred", series_id)]
     cache_name = f"fred_{series_id}.csv"
     if FRED_API_KEY:
         try:
@@ -174,7 +181,7 @@ def fetch_yahoo(symbol, rng="5y"):
         try:
             url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{sym}"
                    f"?range={rng}&interval=1d")
-            j = json.loads(http_text(url, tries=2, timeout=20))
+            j = json.loads(http_text(url, tries=1, timeout=8))
             res = ((j.get("chart") or {}).get("result") or [])
             if not res:
                 continue
@@ -202,7 +209,7 @@ def fetch_yahoo(symbol, rng="5y"):
 def fetch_stooq(symbol):
     cache_name = f"stooq_{symbol.replace('%5E','idx')}.csv"
     try:
-        raw = http_text(f"https://stooq.com/q/d/l/?s={symbol}&i=d")
+        raw = http_text(f"https://stooq.com/q/d/l/?s={symbol}&i=d", tries=1, timeout=8)
         rows = raw.strip().splitlines()
         if rows and not rows[0].lower().startswith("date"):
             # 挑战页/空页
@@ -234,6 +241,8 @@ def fetch_stooq(symbol):
 
 
 def fetch_price(name):
+    if ("price", name) in RAW:
+        return RAW[("price", name)]
     ys, ss = PRICE[name]
     d = fetch_yahoo(ys)
     if d:
@@ -436,6 +445,8 @@ def build_cape():
 
 
 def fetch_multpl(endpoint):
+    if ("multpl", endpoint) in RAW:
+        return RAW[("multpl", endpoint)]
     cache_name = f"multpl_{endpoint.replace('/', '_')}.json"
     try:
         raw = http_text(f"https://www.multpl.com/{endpoint}/table?extra=1&f=json", tries=2)
@@ -682,8 +693,38 @@ def build_correlation():
 
 
 # ---------------------------------------------------------------- 主流程
+def prefetch_all():
+    """并发预取所有序列，把整体耗时压到『最慢单个』而非『全部累加』。
+    单请求内部已有线程级硬超时，故这里不会无限挂起。"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    jobs = [("fred", s) for s in FRED_IDS] + \
+           [("price", n) for n in PRICE_NAMES] + \
+           [("multpl", "shiller-pe")]
+
+    def work(kind, key):
+        if kind == "fred":
+            return fetch_fred(key)
+        if kind == "price":
+            return fetch_price(key)
+        return fetch_multpl(key)
+
+    log(f"并发预取 {len(jobs)} 个序列 …")
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        futs = {ex.submit(work, k, key): (k, key) for k, key in jobs}
+        for fut in as_completed(futs):
+            k, key = futs[fut]
+            try:
+                RAW[(k, key)] = fut.result() or []
+            except Exception as e:
+                RAW[(k, key)] = []
+                log(f"  预取失败 {k}:{key} {e}")
+    okc = sum(1 for v in RAW.values() if v)
+    log(f"预取完成：{okc}/{len(jobs)} 有数据")
+
+
 def main():
     log("开始抓取并计算面板 …")
+    prefetch_all()
     groups = []; asof = {}; ok = 0
 
     plan = [
