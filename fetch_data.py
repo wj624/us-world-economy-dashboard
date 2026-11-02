@@ -116,6 +116,102 @@ def save_cache(name, text):
         pass
 
 
+# ---- 当日 TTL + 增量缓存 ----
+_TTL_FILE = os.path.join(CACHE, "_ttl.json")
+_TTL = {}
+_TTL_LOADED = False
+
+
+def _today():
+    return dt.datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def _force_refresh():
+    return os.environ.get("FORCE_REFRESH", "").lower() in ("1", "true", "yes")
+
+
+def _load_ttl():
+    global _TTL, _TTL_LOADED
+    if _TTL_LOADED:
+        return
+    try:
+        if os.path.exists(_TTL_FILE):
+            with open(_TTL_FILE, encoding="utf-8") as f:
+                _TTL = json.load(f) or {}
+    except Exception:
+        _TTL = {}
+    _TTL_LOADED = True
+
+
+def _save_ttl():
+    try:
+        with open(_TTL_FILE, "w", encoding="utf-8") as f:
+            json.dump(_TTL, f)
+    except Exception:
+        pass
+
+
+def _ttl_hit(key):
+    """今天已抓过、且非强制刷新 -> 命中，可跳过网络。"""
+    _load_ttl()
+    return (not _force_refresh()) and _TTL.get(key) == _today()
+
+
+def _ttl_mark(key):
+    _load_ttl()
+    _TTL[key] = _today()
+    _save_ttl()
+
+
+def _read_pairs(cache_name):
+    """读 'date,value' 缓存 -> [(date, float)]。"""
+    txt = load_cache(cache_name)
+    if not txt:
+        return []
+    out = []
+    for line in txt.splitlines():
+        p = line.split(",")
+        if len(p) < 2:
+            continue
+        try:
+            out.append((p[0].strip(), float(p[1])))
+        except ValueError:
+            continue
+    return out
+
+
+def _dumps_pairs(pairs):
+    return "\n".join(f"{d},{v}" for d, v in pairs)
+
+
+def _merge_pairs(old, new):
+    """按日期合并（new 覆盖 old），返回升序列表。"""
+    m = {d: v for d, v in old}
+    for d, v in new:
+        m[d] = v
+    return sorted(m.items())
+
+
+def _minus_days(date_str, n):
+    try:
+        return (dt.datetime.strptime(date_str, "%Y-%m-%d") - dt.timedelta(days=n)).strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def _parse_fred_api(raw):
+    j = json.loads(raw)
+    out = []
+    for ob in (j.get("observations") or []):
+        d, v = ob.get("date"), ob.get("value")
+        if d and v not in (None, ".", ""):
+            try:
+                out.append((d, float(v)))
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
 def _parse_fred_csv(raw):
     out = []
     for line in raw.splitlines()[1:]:
@@ -136,47 +232,65 @@ def _parse_fred_csv(raw):
 
 
 def fetch_fred(series_id):
-    """FRED: 有 key 走 API(快)，否则 fredgraph.csv 免 key；失败回退缓存。"""
+    """FRED: 官方 API(有 key)为主，fredgraph 兜底；带『当日 TTL』+『增量抓取』。
+    - TTL：今天已抓过且缓存存在 -> 直接用缓存，不再请求（省调用/防限流）。
+    - 增量：有缓存 -> 只从『缓存最后日期 − 10 天』开始取，再合并（留重叠吸收修订）。
+    - 失败：用缓存兜底。设 FORCE_REFRESH=1 可强制全量重抓。
+    """
     if ("fred", series_id) in RAW:
         return RAW[("fred", series_id)]
     cache_name = f"fred_{series_id}.csv"
+    ttl_key = f"fred:{series_id}"
+    cached = _read_pairs(cache_name)
+
+    if cached and _ttl_hit(ttl_key):
+        return cached
+
+    start = _minus_days(cached[-1][0], 10) if (cached and not _force_refresh()) else None
+
     if FRED_API_KEY:
         try:
             url = ("https://api.stlouisfed.org/fred/series/observations"
                    f"?series_id={series_id}&api_key={FRED_API_KEY}&file_type=json")
-            j = json.loads(http_text(url))
-            out = []
-            for ob in (j.get("observations") or []):
-                d, v = ob.get("date"), ob.get("value")
-                if d and v not in (None, ".", ""):
-                    try:
-                        out.append((d, float(v)))
-                    except (ValueError, TypeError):
-                        pass
+            if start:
+                url += f"&observation_start={start}"
+            out = _parse_fred_api(http_text(url))
             if out:
-                save_cache(cache_name, "\n".join(f"{d},{v}" for d, v in out))
+                merged = _merge_pairs(cached, out)
+                save_cache(cache_name, _dumps_pairs(merged))
+                _ttl_mark(ttl_key)
+                return merged
+            if cached:                       # 增量无新数据（如月度序列）
+                _ttl_mark(ttl_key)
+                return cached
+        except Exception as e:
+            log(f"    FRED API {series_id} 失败({e})")
+            if cached:                       # 有缓存就不再空等被墙的 fredgraph
+                log(f"    FRED {series_id} 用缓存兜底")
+                return cached
+
+    if not cached:                           # 仅首次（无缓存）才尝试 fredgraph 全量
+        try:
+            raw = http_text(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd=1990-01-01")
+            out = _parse_fred_csv(raw)
+            if out:
+                save_cache(cache_name, _dumps_pairs(out))
+                _ttl_mark(ttl_key)
                 return out
         except Exception as e:
-            log(f"    FRED API {series_id} 失败({e})，转免 key 通道")
-    try:
-        raw = http_text(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd=1990-01-01")
-        out = _parse_fred_csv(raw)
-        if out:
-            save_cache(cache_name, "\n".join(f"{d},{v}" for d, v in out))
-            return out
-    except Exception as e:
-        log(f"    FRED {series_id} 失败({e})")
-    cached = load_cache(cache_name)
-    if cached:
-        log(f"    FRED {series_id} 用缓存兜底")
-        return [(d, float(v)) for d, v in (l.split(",") for l in cached.splitlines() if l)]
-    return []
+            log(f"    FRED {series_id} 失败({e})")
+
+    return cached
 
 
 def fetch_yahoo(symbol, rng="5y"):
-    """Yahoo v8 chart API -> [(date, close)]。query1/query2 容错。"""
+    """Yahoo v8 chart API -> [(date, close)]。query1/query2 容错；带当日 TTL。"""
     sym = symbol.replace("^", "%5E")
     cache_name = f"yahoo_{symbol.replace('^','idx')}.csv"
+    ttl_key = f"yahoo:{symbol}"
+    cached = _read_pairs(cache_name)
+    if cached and _ttl_hit(ttl_key):
+        return cached
     for host in ("query1", "query2"):
         try:
             url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{sym}"
@@ -195,48 +309,53 @@ def fetch_yahoo(symbol, rng="5y"):
                 d = dt.datetime.utcfromtimestamp(int(t)).strftime("%Y-%m-%d")
                 out.append((d, float(c)))
             if out:
-                save_cache(cache_name, "\n".join(f"{d},{v}" for d, v in out))
+                save_cache(cache_name, _dumps_pairs(out))
+                _ttl_mark(ttl_key)
                 return out
         except Exception as e:
             log(f"    Yahoo {symbol}@{host} 失败({e})")
-    cached = load_cache(cache_name)
     if cached:
         log(f"    Yahoo {symbol} 用缓存兜底")
-        return [(l.split(",")[0], float(l.split(",")[1])) for l in cached.splitlines() if l]
+        return cached
     return []
+
+
+def _parse_stooq_text(raw):
+    out = []
+    for line in raw.strip().splitlines()[1:]:
+        p = line.split(",")
+        if len(p) < 5:
+            continue
+        try:
+            c = float(p[4])
+        except ValueError:
+            continue
+        if c != c:
+            continue
+        out.append((p[0].strip(), c))
+    return out
 
 
 def fetch_stooq(symbol):
     cache_name = f"stooq_{symbol.replace('%5E','idx')}.csv"
+    ttl_key = f"stooq:{symbol}"
+    cached_txt = load_cache(cache_name)
+    if cached_txt and _ttl_hit(ttl_key):
+        return _parse_stooq_text(cached_txt)
     try:
         raw = http_text(f"https://stooq.com/q/d/l/?s={symbol}&i=d", tries=1, timeout=8)
-        rows = raw.strip().splitlines()
-        if rows and not rows[0].lower().startswith("date"):
-            # 挑战页/空页
-            if "<html" in raw[:200].lower():
-                raise RuntimeError("challenge page")
-        out = []
-        for line in rows[1:]:
-            p = line.split(",")
-            if len(p) < 5:
-                continue
-            try:
-                c = float(p[4])
-            except ValueError:
-                continue
-            if c != c:
-                continue
-            out.append((p[0].strip(), c))
+        if "<html" in raw[:200].lower():
+            raise RuntimeError("challenge page")
+        out = _parse_stooq_text(raw)
         if out:
             save_cache(cache_name, raw)
+            _ttl_mark(ttl_key)
             return out
     except Exception as e:
         log(f"    Stooq {symbol} 失败({e})")
-    cached = load_cache(cache_name)
-    if cached:
+    if cached_txt:
         log(f"    Stooq {symbol} 用缓存兜底")
-        return [(r.split(",")[0], float(r.split(",")[4])) for r in cached.strip().splitlines()[1:]
-                if len(r.split(",")) >= 5]
+        return _parse_stooq_text(cached_txt)
     return []
 
 
@@ -457,40 +576,44 @@ def build_cape():
                       note=">30 高估(2000年达44)；<15 历史极低。")
 
 
+def _parse_multpl_text(raw):
+    try:
+        j = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(j, list):
+        return []
+    out = []
+    for row in j:
+        d = _parse_any_date(row.get("date"))
+        vs = row.get("value")
+        if d and vs not in (None, ""):
+            try:
+                out.append((d, float(str(vs).replace(",", ""))))
+            except ValueError:
+                pass
+    return out
+
+
 def fetch_multpl(endpoint):
     if ("multpl", endpoint) in RAW:
         return RAW[("multpl", endpoint)]
     cache_name = f"multpl_{endpoint.replace('/', '_')}.json"
+    ttl_key = f"multpl:{endpoint}"
+    cached_txt = load_cache(cache_name)
+    if cached_txt and _ttl_hit(ttl_key):
+        return _parse_multpl_text(cached_txt)
     try:
         raw = http_text(f"https://www.multpl.com/{endpoint}/table?extra=1&f=json", tries=2)
-        j = json.loads(raw)
-        if isinstance(j, list):
-            out = []
-            for row in j:
-                ds, vs = row.get("date"), row.get("value")
-                d = _parse_any_date(ds)
-                if d and vs not in (None, ""):
-                    try:
-                        out.append((d, float(str(vs).replace(",", ""))))
-                    except ValueError:
-                        pass
-            if out:
-                save_cache(cache_name, raw)
-                return out
+        out = _parse_multpl_text(raw)
+        if out:
+            save_cache(cache_name, raw)
+            _ttl_mark(ttl_key)
+            return out
     except Exception as e:
         log(f"    multpl {endpoint} 失败({e})")
-    cached = load_cache(cache_name)
-    if cached:
-        try:
-            j = json.loads(cached)
-            out = []
-            for row in j:
-                d = _parse_any_date(row.get("date"))
-                if d:
-                    out.append((d, float(str(row.get("value")).replace(",", ""))))
-            return out
-        except Exception:
-            return []
+    if cached_txt:
+        return _parse_multpl_text(cached_txt)
     return []
 
 
