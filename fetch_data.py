@@ -35,8 +35,8 @@ FRED_API_KEY = os.environ.get("FRED_API_KEY", "").strip()
 TRIES = 2
 HTTP_TIMEOUT = 15          # 单请求上限；FRED 串行、价格并发，整体耗时有界
 RAW = {}                   # 预取缓存：('fred',id)/('price',name)/('multpl',ep) -> 列表
-FRED_IDS = ["SP500", "DGS10", "CPIAUCSL", "VIXCLS", "BAA10Y",
-            "T10Y2Y", "DTWEXBGS", "UNRATE", "USREC"]
+FRED_IDS = ["NASDAQCOM", "SP500", "DGS10", "CPIAUCSL", "VIXCLS",
+            "BAA10Y", "T10Y2Y", "DTWEXBGS", "UNRATE", "USREC"]
 PRICE_NAMES = ["SPY 美股大盘", "QQQ 美股科技", "VXUS 发达(美外)", "EEM 新兴市场",
                "EFA 发达国际", "GLD 黄金", "TLT 长债", "DBC 商品"]
 
@@ -367,15 +367,16 @@ def panel_line(pid, title, subtitle, pairs, since, unit="", refs=None,
 
 # ---------------------------------------------------------------- 估值(全 FRED)
 def build_buffett():
-    """S&P500 长期估值偏离：剔除通胀后的实际价格相对 10 年均线(2500交易日)的偏离。
-    只依赖 FRED 的 SP500 + CPI（二者在 Actions 均可用），比已下架的 Wilshire5000 稳。"""
-    sp = fetch_fred("SP500")
+    """美股长期估值偏离：纳指综指(NASDAQCOM, 1980 起) 剔除通胀后的实际价格，
+    相对 10 年均线(2500 交易日)的偏离。S&P/DJIA 在 FRED 受授权限制仅 2016 起，
+    故用长历史的纳指做「长期估值温度计」，分位可追溯至 1990。"""
+    idx = fetch_fred("NASDAQCOM")
     cpi = fetch_fred("CPIAUCSL")
-    if len(sp) < 2600 or not cpi:
+    if len(idx) < 2600 or not cpi:
         return None
     cpi_sorted = sorted(cpi)
     j = 0; cur_cpi = None; real = []
-    for d, v in sp:
+    for d, v in idx:
         while j < len(cpi_sorted) and cpi_sorted[j][0] <= d:
             cur_cpi = cpi_sorted[j][1]; j += 1
         if cur_cpi:
@@ -392,12 +393,12 @@ def build_buffett():
         if i >= win - 1 and cum:
             ma = cum / win
             dev.append((d, (v / ma - 1) * 100))
-    return panel_line("M1", "S&P500 长期估值偏离（10年·实际价格）",
-                      "剔除通胀后的价格相对 10 年均线偏离，长期贵贱",
+    return panel_line("M1", "美股长期估值偏离（纳指·10年·实际价格）",
+                      "剔除通胀后的纳指相对 10 年均线偏离，长期贵贱",
                       dev, since="2005-01-01", unit="%", pct_baseline="1990-01-01",
                       refs=[{"value": 20, "label": "偏贵(>+20%)", "color": "#c0392b"},
                             {"value": -20, "label": "偏低(<-20%)", "color": "#27ae60"}],
-                      note=">+20% 长期偏贵、<-20% 长期低位；实际价格已剔除通胀，跨年代可比。")
+                      note=">+20% 长期偏贵、<-20% 长期低位；实际价格已剔除通胀，跨年代可比（长历史用纳指代理）。")
 
 
 def build_sp_anchor():
