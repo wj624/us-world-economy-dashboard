@@ -34,7 +34,6 @@ jobs:
           # 可选：在仓库 Settings → Secrets 里加 FRED_API_KEY 可走官方 API（更快、限流更宽）。
           # 不设也能跑：fetch_data.py 会自动走 fredgraph.csv 免 key 通道。
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-          NASDAQ_API_KEY: ${{ secrets.NASDAQ_API_KEY }}
         run: python fetch_data.py
         timeout-minutes: 10
 
