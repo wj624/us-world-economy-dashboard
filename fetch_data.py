@@ -38,7 +38,9 @@ RAW = {}                   # 预取缓存：('fred',id)/('price',name)/('multpl'
 FRED_IDS = ["NASDAQCOM", "SP500", "DGS10", "CPIAUCSL", "VIXCLS",
             "BAA10Y", "T10Y2Y", "DTWEXBGS", "UNRATE", "USREC",
             "VXVCLS", "T10Y3M", "ICSA", "PCEPILFE", "T5YIE",
-            "A191RL1Q225SBEA", "UMCSENT", "DFF", "NCBEILQ027S", "GDP"]
+            "A191RL1Q225SBEA", "UMCSENT", "DFF", "NCBEILQ027S", "GDP",
+            "WEI", "CFNAI", "STLFSI4", "PERMIT", "NEWORDER", "AWHAETP",
+            "T5YIFR", "MICH", "DCOILWTICO", "PPIACO"]
 PRICE_NAMES = ["SPY 美股大盘", "QQQ 美股科技", "VXUS 发达(美外)", "EEM 新兴市场",
                "EFA 发达国际", "GLD 黄金", "TLT 长债", "DBC 商品"]
 
@@ -971,6 +973,68 @@ def build_fedfunds():
                       note="政策利率；高位=紧缩、压制风险资产。")
 
 
+# ---------------------------------------------------------------- 领先指标面板(第三批)
+def build_wei():
+    raw = fetch_fred("WEI")
+    if not raw:
+        return None
+    return panel_line("M22", "纽约联储周度经济指数（WEI）", "高频增长 nowcast，周度更新",
+                      raw, since="2010-01-01", unit="", pct_baseline="2010-01-01", decimals=2,
+                      refs=[{"value": 0, "label": "零增长(0)", "color": "#7f8c8d"}],
+                      note=">0 扩张、<0 收缩；周度领先月度数据，拐点最快。")
+
+
+def build_cfnai():
+    raw = fetch_fred("CFNAI")
+    if not raw:
+        return None
+    return panel_line("M23", "芝加哥联储全国活动指数（CFNAI）", "综合活动景气",
+                      raw, since="2005-01-01", unit="", pct_baseline="2000-01-01", decimals=2,
+                      refs=[{"value": 0, "label": "趋势(0)", "color": "#7f8c8d"},
+                            {"value": -0.7, "label": "衰退阈值(-0.7)", "color": "#c0392b"}],
+                      note="<-0.7 常伴衰退；>0 高于趋势增长（比 GDP 早）。")
+
+
+def build_permit():
+    raw = fetch_fred("PERMIT")
+    if not raw:
+        return None
+    return panel_line("M24", "营建许可", "地产周期领先指标（千套·年化）",
+                      raw, since="2005-01-01", unit="千套", pct_baseline="2000-01-01", decimals=0,
+                      refs=[{"value": 1500, "label": "高位(1500)", "color": "#e67e22"}],
+                      note="地产领先指标；持续下滑预示投资走弱。")
+
+
+def build_neworder():
+    raw = fetch_fred("NEWORDER")
+    if not raw:
+        return None
+    return panel_line("M25", "制造业新订单", "订单领先生产（百万美元）",
+                      raw, since="2005-01-01", unit="", pct_baseline="2000-01-01", decimals=0,
+                      note="新订单领先工业生产，需求拐点先动。")
+
+
+def build_awhaetp():
+    raw = fetch_fred("AWHAETP")
+    if not raw:
+        return None
+    return panel_line("M26", "平均周工时（全私企）", "企业先砍工时=衰退前兆",
+                      raw, since="2006-03-01", unit="小时", pct_baseline="2006-03-01", decimals=1,
+                      refs=[{"value": 34.0, "label": "警示(34.0)", "color": "#c0392b"}],
+                      note="工时先于裁员下降，是衰退的早期信号。")
+
+
+def build_stlfsi():
+    raw = fetch_fred("STLFSI4")
+    if not raw:
+        return None
+    return panel_line("M27", "圣路易斯联储金融压力指数", "金融压力，正=高于均值",
+                      raw, since="2005-01-01", unit="", pct_baseline="2000-01-01", decimals=2,
+                      refs=[{"value": 0, "label": "均值(0)", "color": "#7f8c8d"},
+                            {"value": 1.0, "label": "紧张(>1)", "color": "#c0392b"}],
+                      note="正=金融压力高于均值，常领先经济走弱；负=宽松。")
+
+
 # ---------------------------------------------------------------- 主流程
 def prefetch_all():
     """价格并发（不同主机，互不影响）；FRED 串行（并发会触发 FRED 限流/超时）。
@@ -1008,53 +1072,78 @@ def _mean(xs):
     return sum(xs) / len(xs) if xs else None
 
 
-def build_clock():
-    """美林投资时钟：由「增长方向 × 通胀方向」定四象限（方向=动量，非水平）。"""
-    g_sig, g_votes = [], []
-    gdp = fetch_fred("A191RL1Q225SBEA")
-    if len(gdp) >= 4:
-        a = _mean([v for _, v in gdp[-2:]]); b = _mean([v for _, v in gdp[-4:-2]])
-        if a is not None and b is not None:
-            dv = a - b
-            g_sig.append(("GDP增速", "↑" if dv >= 0 else "↓", f"近2季 {a:.1f} vs 前2季 {b:.1f}"))
-            g_votes.append(1 if dv >= 0 else -1)
-    un = fetch_fred("UNRATE")
-    if len(un) >= 4:
-        dv = un[-1][1] - un[-4][1]
-        g_sig.append(("失业率", "↑" if dv > 0 else "↓", f"3月 {dv:+.1f}pt"))
-        g_votes.append(-1 if dv > 0 else 1)
-    ic = fetch_fred("ICSA")
-    if len(ic) >= 60:
-        vals = [v for _, v in ic]
-        ma = [sum(vals[i - 3:i + 1]) / 4 for i in range(3, len(vals))]
-        if len(ma) >= 53 and ma[-53]:
-            dv = (ma[-1] / ma[-53] - 1) * 100
-            g_sig.append(("初请失业金", "↑" if dv > 0 else "↓", f"4周均同比 {dv:+.0f}%"))
-            g_votes.append(-1 if dv > 0 else 1)
-    se = fetch_fred("UMCSENT")
-    if len(se) >= 4:
-        dv = se[-1][1] - se[-4][1]
-        g_sig.append(("消费者信心", "↑" if dv >= 0 else "↓", f"3月 {dv:+.1f}"))
-        g_votes.append(1 if dv >= 0 else -1)
-    growth = round(sum(g_votes) / len(g_votes), 2) if g_votes else 0.0
+def _trend(pairs, days=90):
+    """返回 (最后值, days 天前基准值)；不足则 None。"""
+    if not pairs:
+        return None
+    ld = dt.datetime.strptime(pairs[-1][0], "%Y-%m-%d")
+    target = (ld - dt.timedelta(days=days)).strftime("%Y-%m-%d")
+    base = None
+    for d, v in pairs:
+        if d <= target:
+            base = v
+        else:
+            break
+    if base is None or base == 0:
+        return None
+    return pairs[-1][1], base
 
-    i_sig, i_votes = [], []
-    cpi_y = yoy(fetch_fred("CPIAUCSL"))
-    if len(cpi_y) >= 4:
-        dv = cpi_y[-1][1] - cpi_y[-4][1]
-        i_sig.append(("CPI同比", "↑" if dv >= 0 else "↓", f"3月 {dv:+.2f}pt"))
-        i_votes.append(1 if dv >= 0 else -1)
-    pce_y = yoy(fetch_fred("PCEPILFE"))
-    if len(pce_y) >= 4:
-        dv = pce_y[-1][1] - pce_y[-4][1]
-        i_sig.append(("核心PCE", "↑" if dv >= 0 else "↓", f"3月 {dv:+.2f}pt"))
-        i_votes.append(1 if dv >= 0 else -1)
-    be = fetch_fred("T5YIE")
-    if len(be) >= 22:
-        dv = be[-1][1] - be[-22][1]
-        i_sig.append(("5年通胀预期", "↑" if dv >= 0 else "↓", f"1月 {dv:+.2f}pt"))
-        i_votes.append(1 if dv >= 0 else -1)
-    infl = round(sum(i_votes) / len(i_votes), 2) if i_votes else 0.0
+
+def _sig(pairs, invert=False, pct=False, days=90):
+    """按 3 个月方向给投票：返回 (vote, 自身箭头, 明细)。"""
+    tb = _trend(pairs, days)
+    if not tb:
+        return None
+    last, base = tb
+    d = last - base
+    vote = 1 if d >= 0 else -1
+    if invert:
+        vote = -vote
+    if pct:
+        detail = f"3月 {(last / base - 1) * 100:+.1f}%"
+    elif abs(d) >= 100:
+        detail = f"3月 {d:+.0f}"
+    elif abs(d) >= 1:
+        detail = f"3月 {d:+.1f}"
+    else:
+        detail = f"3月 {d:+.2f}"
+    return vote, ("↑" if d >= 0 else "↓"), detail
+
+
+def build_clock():
+    """美林投资时钟：增长方向 × 通胀方向。7 增长 + 5 通胀信号，加权 + 3 月平滑（动量法）。"""
+    g_spec = [
+        ("WEI 周度经济", "WEI", 0.22, False, False),
+        ("CFNAI 活动", "CFNAI", 0.18, False, False),
+        ("初请失业金", "ICSA", 0.13, True, False),
+        ("营建许可", "PERMIT", 0.13, False, False),
+        ("制造业订单", "NEWORDER", 0.12, False, False),
+        ("平均周工时", "AWHAETP", 0.12, False, False),
+        ("金融压力", "STLFSI4", 0.10, True, False),
+    ]
+    i_spec = [
+        ("5y5y通胀预期", "T5YIFR", 0.25, False, False),
+        ("密歇根预期", "MICH", 0.20, False, False),
+        ("WTI油价", "DCOILWTICO", 0.20, False, True),
+        ("PPI商品", "PPIACO", 0.15, False, False),
+        ("核心PCE同比", "PCEPILFE@yoy", 0.20, False, False),
+    ]
+
+    def collect(specs):
+        rows, score, wsum = [], 0.0, 0.0
+        for name, sid, w, inv, pct in specs:
+            pairs = yoy(fetch_fred("PCEPILFE")) if sid.endswith("@yoy") else fetch_fred(sid)
+            r = _sig(pairs, inv, pct)
+            if not r:
+                continue
+            vote, own, detail = r
+            rows.append({"name": name, "arrow": own, "detail": detail})
+            score += w * vote; wsum += w
+        return rows, (score / wsum if wsum else 0.0)
+
+    g_rows, growth = collect(g_spec)
+    i_rows, infl = collect(i_spec)
+    growth = round(growth, 2); infl = round(infl, 2)
 
     if growth >= 0 and infl < 0:
         phase, en, color, asset = "复苏", "Recovery", "#27ae60", "股票"
@@ -1067,11 +1156,11 @@ def build_clock():
 
     note = f"增长{'↑' if growth >= 0 else '↓'}、通胀{'↑' if infl >= 0 else '↓'} → {phase}期，{asset}占优"
     conf = round((abs(growth) + abs(infl)) / 2, 2)
-    sig = [{"name": n, "arrow": a, "detail": d} for n, a, d in (g_sig + i_sig)]
+    wei = fetch_fred("WEI")
+    upd = wei[-1][0] if wei else None
     return {"phase": phase, "en": en, "color": color, "asset": asset,
             "growth": growth, "inflation": infl, "confidence": conf,
-            "note": note, "signals": sig,
-            "updated": cpi_y[-1][0] if cpi_y else None}
+            "note": note, "signals": g_rows + i_rows, "updated": upd}
 
 
 def _al(level, text):
@@ -1111,6 +1200,10 @@ ALERT_RULES = {
         else (_al("mid", f"GDP 增速低 {_num(p):.1f}%") if _num(p) is not None and _num(p) < 1 else None),
     "M20": lambda p: _al("mid", f"消费者信心低迷 {_num(p):.0f}") if _num(p) is not None and _num(p) < 70 else None,
     "M21": lambda p: _al("mid", f"政策利率偏高 {_num(p):.2f}%") if _num(p) is not None and _num(p) > 5 else None,
+    "M22": lambda p: _al("mid", f"WEI {_num(p):.2f}<0，增长收缩") if _num(p) is not None and _num(p) < 0 else None,
+    "M23": lambda p: _al("high", f"CFNAI {_num(p):.2f}<-0.7（衰退阈值）") if _num(p) is not None and _num(p) < -0.7
+        else (_al("mid", f"CFNAI 走弱 {_num(p):.2f}") if _num(p) is not None and _num(p) < -0.3 else None),
+    "M27": lambda p: _al("high", f"金融压力 {_num(p):.2f}>1") if _num(p) is not None and _num(p) > 1 else None,
 }
 
 
@@ -1186,10 +1279,11 @@ def main():
     plan = [
         ("估值", [build_buffett, build_sp_anchor, build_real_rate, build_buffett_m1b]),
         ("情绪 / 风险", [build_vix, build_credit, build_curve, build_correlation,
-                        build_vix_term, build_curve3m]),
+                        build_vix_term, build_curve3m, build_stlfsi]),
         ("全球 / 世界经济", [build_global_map, build_dollar, build_commodities]),
         ("宏观景气", [build_unemployment, build_recession, build_claims,
                      build_gdp, build_sentiment]),
+        ("领先指标 / 景气", [build_wei, build_cfnai, build_permit, build_neworder, build_awhaetp]),
         ("通胀 / 利率", [build_inflation, build_core_pce, build_breakeven, build_fedfunds]),
     ]
     for gname, builders in plan:
