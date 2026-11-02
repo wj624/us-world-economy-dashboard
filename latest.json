@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-02 12:54",
+ "updated": "2026-11-02 13:06",
  "latest": "2026-10-30",
  "panels": {
   "M1": {
@@ -112,6 +112,17 @@
    "verdict": null,
    "howto": "<0 倒挂=衰退预警；Fed 常用 10Y-3M 而非 10Y-2Y。"
   },
+  "M27": {
+   "title": "圣路易斯联储金融压力指数",
+   "group": "情绪 / 风险",
+   "asof": "2026-10-23",
+   "type": "line",
+   "current": -0.58,
+   "pct": 27.9,
+   "unit": "",
+   "verdict": null,
+   "howto": "正=金融压力高于均值，常领先经济走弱；负=宽松。"
+  },
   "M7": {
    "title": "全球股市地图（归一化）",
    "group": "全球 / 世界经济",
@@ -199,6 +210,61 @@
    "unit": "",
    "verdict": null,
    "howto": "<70 信心低迷，预示消费走弱。"
+  },
+  "M22": {
+   "title": "纽约联储周度经济指数（WEI）",
+   "group": "领先指标 / 景气",
+   "asof": "2026-10-24",
+   "type": "line",
+   "current": 2.98,
+   "pct": 81.9,
+   "unit": "",
+   "verdict": null,
+   "howto": ">0 扩张、<0 收缩；周度领先月度数据，拐点最快。"
+  },
+  "M23": {
+   "title": "芝加哥联储全国活动指数（CFNAI）",
+   "group": "领先指标 / 景气",
+   "asof": "2026-09-01",
+   "type": "line",
+   "current": 0.07,
+   "pct": 65.4,
+   "unit": "",
+   "verdict": null,
+   "howto": "<-0.7 常伴衰退；>0 高于趋势增长（比 GDP 早）。"
+  },
+  "M24": {
+   "title": "营建许可",
+   "group": "领先指标 / 景气",
+   "asof": "2026-09-01",
+   "type": "line",
+   "current": 1398.0,
+   "pct": 48.3,
+   "unit": "千套",
+   "verdict": null,
+   "howto": "地产领先指标；持续下滑预示投资走弱。"
+  },
+  "M25": {
+   "title": "制造业新订单",
+   "group": "领先指标 / 景气",
+   "asof": "2026-09-01",
+   "type": "line",
+   "current": 88039.0,
+   "pct": 100.0,
+   "unit": "",
+   "verdict": null,
+   "howto": "新订单领先工业生产，需求拐点先动。"
+  },
+  "M26": {
+   "title": "平均周工时（全私企）",
+   "group": "领先指标 / 景气",
+   "asof": "2026-09-01",
+   "type": "line",
+   "current": 34.4,
+   "pct": 67.2,
+   "unit": "小时",
+   "verdict": null,
+   "howto": "工时先于裁员下降，是衰退的早期信号。"
   },
   "M11": {
    "title": "通胀（CPI 同比）",
