@@ -35,8 +35,8 @@ FRED_API_KEY = os.environ.get("FRED_API_KEY", "").strip()
 TRIES = 2
 HTTP_TIMEOUT = 15          # 单请求上限；FRED 串行、价格并发，整体耗时有界
 RAW = {}                   # 预取缓存：('fred',id)/('price',name)/('multpl',ep) -> 列表
-FRED_IDS = ["WILL5000INDFC", "GDP", "SP500", "DGS10", "CPIAUCSL",
-            "VIXCLS", "BAA10Y", "T10Y2Y", "DTWEXBGS", "UNRATE", "USREC"]
+FRED_IDS = ["SP500", "DGS10", "CPIAUCSL", "VIXCLS", "BAA10Y",
+            "T10Y2Y", "DTWEXBGS", "UNRATE", "USREC"]
 PRICE_NAMES = ["SPY 美股大盘", "QQQ 美股科技", "VXUS 发达(美外)", "EEM 新兴市场",
                "EFA 发达国际", "GLD 黄金", "TLT 长债", "DBC 商品"]
 
@@ -367,25 +367,37 @@ def panel_line(pid, title, subtitle, pairs, since, unit="", refs=None,
 
 # ---------------------------------------------------------------- 估值(全 FRED)
 def build_buffett():
-    """巴菲特指标 ≈ Wilshire5000 总市值指数 / 年化GDP。"""
-    w = fetch_fred("WILL5000INDFC")
-    g = fetch_fred("GDP")            # 季度，$B 年化
-    if not w or not g:
+    """S&P500 长期估值偏离：剔除通胀后的实际价格相对 10 年均线(2500交易日)的偏离。
+    只依赖 FRED 的 SP500 + CPI（二者在 Actions 均可用），比已下架的 Wilshire5000 稳。"""
+    sp = fetch_fred("SP500")
+    cpi = fetch_fred("CPIAUCSL")
+    if len(sp) < 2600 or not cpi:
         return None
-    g.sort()
-    pairs = []
-    j = 0; cur_g = None
-    for d, v in w:
-        while j < len(g) and g[j][0] <= d:
-            cur_g = g[j][1]; j += 1
-        if cur_g:
-            pairs.append((d, v / cur_g * 100))
-    return panel_line("M1", "巴菲特指标（市值 / GDP，近似）",
-                      "Wilshire5000 总市值指数 / 年化 GDP，整体估值温度计",
-                      pairs, since="2005-01-01", unit="%", pct_baseline="1990-01-01",
-                      refs=[{"value": 100, "label": "合理上沿(100%)", "color": "#e67e22"},
-                            {"value": 130, "label": "危险(>130%)", "color": "#c0392b"}],
-                      note=">100% 偏贵；>130% 危险区；<75% 低估。（Wilshire5000/GDP 近似，绝对值略高于市值口径）")
+    cpi_sorted = sorted(cpi)
+    j = 0; cur_cpi = None; real = []
+    for d, v in sp:
+        while j < len(cpi_sorted) and cpi_sorted[j][0] <= d:
+            cur_cpi = cpi_sorted[j][1]; j += 1
+        if cur_cpi:
+            real.append((d, v / cur_cpi))
+    if len(real) < 2600:
+        return None
+    vals = [v for _, v in real]
+    win = 2500
+    dev = []; cum = 0.0
+    for i, (d, v) in enumerate(real):
+        cum += v
+        if i >= win:
+            cum -= vals[i - win]
+        if i >= win - 1 and cum:
+            ma = cum / win
+            dev.append((d, (v / ma - 1) * 100))
+    return panel_line("M1", "S&P500 长期估值偏离（10年·实际价格）",
+                      "剔除通胀后的价格相对 10 年均线偏离，长期贵贱",
+                      dev, since="2005-01-01", unit="%", pct_baseline="1990-01-01",
+                      refs=[{"value": 20, "label": "偏贵(>+20%)", "color": "#c0392b"},
+                            {"value": -20, "label": "偏低(<-20%)", "color": "#27ae60"}],
+                      note=">+20% 长期偏贵、<-20% 长期低位；实际价格已剔除通胀，跨年代可比。")
 
 
 def build_sp_anchor():
