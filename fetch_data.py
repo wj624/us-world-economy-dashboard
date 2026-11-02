@@ -33,7 +33,7 @@ CTX.verify_mode = ssl.CERT_NONE
 
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "").strip()
 TRIES = 2
-HTTP_TIMEOUT = 10          # 单请求上限；配合并发预取，整体耗时有界
+HTTP_TIMEOUT = 15          # 单请求上限；FRED 串行、价格并发，整体耗时有界
 RAW = {}                   # 预取缓存：('fred',id)/('price',name)/('multpl',ep) -> 列表
 FRED_IDS = ["WILL5000INDFC", "GDP", "SP500", "DGS10", "CPIAUCSL",
             "VIXCLS", "BAA10Y", "T10Y2Y", "DTWEXBGS", "UNRATE", "USREC"]
@@ -159,7 +159,7 @@ def fetch_fred(series_id):
         except Exception as e:
             log(f"    FRED API {series_id} 失败({e})，转免 key 通道")
     try:
-        raw = http_text(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}")
+        raw = http_text(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd=1990-01-01")
         out = _parse_fred_csv(raw)
         if out:
             save_cache(cache_name, "\n".join(f"{d},{v}" for d, v in out))
@@ -694,32 +694,40 @@ def build_correlation():
 
 # ---------------------------------------------------------------- 主流程
 def prefetch_all():
-    """并发预取所有序列，把整体耗时压到『最慢单个』而非『全部累加』。
-    单请求内部已有线程级硬超时，故这里不会无限挂起。"""
+    """价格并发（不同主机，互不影响）；FRED 串行（并发会触发 FRED 限流/超时）。
+    单请求内部已有线程级硬超时，故整体不会无限挂起。"""
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    jobs = [("fred", s) for s in FRED_IDS] + \
-           [("price", n) for n in PRICE_NAMES] + \
-           [("multpl", "shiller-pe")]
+    total = len(PRICE_NAMES) + len(FRED_IDS) + 1
 
-    def work(kind, key):
-        if kind == "fred":
-            return fetch_fred(key)
-        if kind == "price":
-            return fetch_price(key)
-        return fetch_multpl(key)
-
-    log(f"并发预取 {len(jobs)} 个序列 …")
-    with ThreadPoolExecutor(max_workers=12) as ex:
-        futs = {ex.submit(work, k, key): (k, key) for k, key in jobs}
+    # 1) 价格：并发（Yahoo/Stooq 是不同主机，8 路并发实测 Actions 全通）
+    log("并发预取价格序列 …")
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {ex.submit(fetch_price, n): n for n in PRICE_NAMES}
         for fut in as_completed(futs):
-            k, key = futs[fut]
+            n = futs[fut]
             try:
-                RAW[(k, key)] = fut.result() or []
+                RAW[("price", n)] = fut.result() or []
             except Exception as e:
-                RAW[(k, key)] = []
-                log(f"  预取失败 {k}:{key} {e}")
+                RAW[("price", n)] = []
+                log(f"  价格失败 {n}: {e}")
+
+    # 2) FRED：串行（关键修复——并发会把 FRED 打到超时）
+    log("串行预取 FRED 序列 …")
+    for sid in FRED_IDS:
+        try:
+            RAW[("fred", sid)] = fetch_fred(sid) or []
+        except Exception as e:
+            RAW[("fred", sid)] = []
+            log(f"  FRED 失败 {sid}: {e}")
+
+    # 3) multpl（可选）
+    try:
+        RAW[("multpl", "shiller-pe")] = fetch_multpl("shiller-pe") or []
+    except Exception:
+        RAW[("multpl", "shiller-pe")] = []
+
     okc = sum(1 for v in RAW.values() if v)
-    log(f"预取完成：{okc}/{len(jobs)} 有数据")
+    log(f"预取完成：{okc}/{total} 有数据")
 
 
 def main():
