@@ -94,6 +94,31 @@ def http_text(url, tries=TRIES, timeout=HTTP_TIMEOUT):
     raise RuntimeError(last or "empty")
 
 
+def _fetch_bytes(url, timeout=60):
+    box = {}
+    def worker():
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA})
+            with urllib.request.urlopen(req, timeout=timeout, context=CTX) as r:
+                box["d"] = r.read(); box["c"] = r.status
+        except Exception as e:
+            box["err"] = f"{type(e).__name__}:{str(e)[:50]}"
+    t = threading.Thread(target=worker, daemon=True)
+    t.start(); t.join(timeout + 4)
+    if t.is_alive():
+        return None
+    return box.get("d")
+
+
+def _http_bytes(url, tries=1, timeout=45):
+    for i in range(tries):
+        b = _fetch_bytes(url, timeout)
+        if b and len(b) > 10000:
+            return b
+        time.sleep(1.5)
+    return None
+
+
 # ---------------------------------------------------------------- 缓存
 def _cpath(name):
     return os.path.join(CACHE, name)
@@ -565,17 +590,67 @@ def build_real_rate():
                       note="实际利率转正且走高=金融环境收紧，压制估值；负值=宽松利好股市。")
 
 
+# Shiller 官方 ie_data.xls（yale 主源 / Shiller CDN 备源）
+CAPE_URLS = ["http://www.econ.yale.edu/~shiller/data/ie_data.xls",
+             "https://img1.wsimg.com/blobby/go/e5e77e0b-59d1-44d9-ab25-4763ac982e53/downloads/ie_data.xls"]
+
+
+def _load_cape():
+    """下载并解析 Shiller ie_data.xls 的 CAPE 列(第13列/索引12)，带缓存兜底。"""
+    import io as _io
+    try:
+        import pandas as pd
+    except Exception:
+        pd = None
+    cache_name = "cape.csv"
+    if pd is not None:
+        for u in CAPE_URLS:
+            raw = _http_bytes(u, tries=1, timeout=45)
+            if not raw:
+                continue
+            try:
+                df = pd.read_excel(_io.BytesIO(raw), sheet_name="Data", header=None)
+                out = []
+                for i in range(8, len(df)):
+                    dv, cv = df.iat[i, 0], df.iat[i, 12]
+                    try:
+                        s = f"{float(dv):.4f}"; y = s.split(".")[0]; mo = int(s.split(".")[1][:2])
+                        cape = float(cv)
+                    except Exception:
+                        continue
+                    if 1 <= mo <= 12 and cape == cape and cape > 0:
+                        out.append((f"{y}-{mo:02d}", cape))
+                if len(out) > 100:
+                    save_cache(cache_name, _dumps_pairs(out))
+                    log(f"    CAPE 取自 {u.split('/')[2]}：{len(out)} 个月，末 {out[-1][0]}")
+                    return out
+            except Exception as e:
+                log(f"    CAPE 解析失败 {u.split('/')[2]}: {e}")
+    c = _read_pairs(cache_name)
+    if c:
+        log(f"    CAPE 用缓存兜底（末 {c[-1][0]}）")
+    return c
+
+
 def build_cape():
-    """席勒 CAPE（multpl，可选增强）。"""
-    raw = fetch_multpl("shiller-pe")
-    if not raw:
+    pairs = _load_cape()
+    if not pairs:
         return None
+    # 陈旧保护：末值超过 120 天就跳过，绝不把两年前的 CAPE 当当前值展示
+    try:
+        ld = pairs[-1][0] + "-01" if len(pairs[-1][0]) == 7 else pairs[-1][0]
+        last_d = dt.datetime.strptime(ld, "%Y-%m-%d").date()
+        if (dt.date.today() - last_d).days > 120:
+            log(f"    CAPE 末值 {pairs[-1][0]} 超 120 天，跳过（避免陈旧误导）")
+            return None
+    except Exception:
+        pass
     return panel_line("M1b", "席勒 CAPE（周期调整市盈率）",
-                      "经通胀调整的十年平均盈利口径，美股长期贵贱",
-                      raw, since="2005-01-01", unit="倍", pct_baseline="1990-01-01",
+                      "经通胀调整的十年平均盈利口径，长期估值",
+                      pairs, since="2005-01-01", unit="倍", pct_baseline="1990-01-01",
                       refs=[{"value": 30, "label": "高估(>30)", "color": "#c0392b"},
                             {"value": 15, "label": "偏低(<15)", "color": "#27ae60"}],
-                      note=">30 高估(2000年达44)；<15 历史极低。")
+                      note=">30 高估(2000年达44)；<15 历史极低。来源：Shiller 官方 ie_data。")
 
 
 def _parse_multpl_text(raw):
@@ -943,7 +1018,7 @@ def prefetch_all():
     """价格并发（不同主机，互不影响）；FRED 串行（并发会触发 FRED 限流/超时）。
     单请求内部已有线程级硬超时，故整体不会无限挂起。"""
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    total = len(PRICE_NAMES) + len(FRED_IDS) + 1
+    total = len(PRICE_NAMES) + len(FRED_IDS)
 
     # 1) 价格：并发（Yahoo/Stooq 是不同主机，8 路并发实测 Actions 全通）
     log("并发预取价格序列 …")
@@ -965,12 +1040,6 @@ def prefetch_all():
         except Exception as e:
             RAW[("fred", sid)] = []
             log(f"  FRED 失败 {sid}: {e}")
-
-    # 3) multpl（可选）
-    try:
-        RAW[("multpl", "shiller-pe")] = fetch_multpl("shiller-pe") or []
-    except Exception:
-        RAW[("multpl", "shiller-pe")] = []
 
     okc = sum(1 for v in RAW.values() if v)
     log(f"预取完成：{okc}/{total} 有数据")
