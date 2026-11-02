@@ -2,7 +2,7 @@
 
 > **在线看板（点开即用）**：<https://wj624.github.io/us-world-economy-dashboard/>
 
-一个覆盖**美股与世界经济**的 21 面板指标看板。**单文件、自包含、离线可看**，手机可「加到主屏幕」当 App。
+一个覆盖**美股与世界经济**的 22 面板指标看板。**单文件、自包含、离线可看**，手机可「加到主屏幕」当 App。
 每日北京时间 **06:30**（美股收盘后）自动更新。
 
 顶部一个**综合温度计 + 超标提示条**（打开即知哪些指标越线，点标签直接跳到对应图），下面分五个方向：
@@ -45,7 +45,7 @@ AI 文本摘要     https://wj624.github.io/us-world-economy-dashboard/llms.txt
 
 - **单文件 `index.html`**：ECharts 与全部数据内联，`file://` 双击、任意静态目录、GitHub Pages 都能直接打开；离线可用。
 - **顶部综合温度计**：估值/情绪/信用/通胀四个分位合成 0–100，一眼看「冷/热」；下方**超标提示条**列出所有越线指标，点标签直接跳到该图。
-- **5 组 21 个面板**，自适应手机/电脑；每面板含：当前值、历史分位徽章、阈值参考线、判读一句话、数据截止日。
+- **5 组 22 个面板**，自适应手机/电脑；每面板含：当前值、历史分位徽章、阈值参考线、判读一句话、数据截止日。
 - **衰退阴影**：用 FRED `USREC` 的官方衰退区间，在所有时间序列图上画灰色带。
 - **多序列归一化图**：全球股市地图、避险资产，各自重置为 100 便于横向比较。
 
@@ -68,7 +68,7 @@ AI 文本摘要     https://wj624.github.io/us-world-economy-dashboard/llms.txt
 | **估值** | M1 美股长期估值偏离（纳指·10年·实际价格） | FRED | >+20% 长期偏贵、<-20% 低位 |
 | | M2 S&P500 偏离五年均线 | FRED | >+10% 偏贵、<-20% 底部 |
 | | M3 实际利率（10Y − CPI） | FRED | 转正走高=收紧，压制估值 |
-| | M1b 席勒 CAPE（可选） | multpl | >30 高估、<15 偏低 |
+| | M1b 巴菲特指标（股权市值/GDP） | FRED | >200% 偏高；当前处历史最高分位 |
 | **情绪/风险** | M4 VIX 恐慌指数 | FRED | >30 恐慌、<15 自满 |
 | | M5 信用利差（BAA−10Y） | FRED | 走阔=信用收缩 |
 | | M6 收益率曲线倒挂（10Y−2Y） | FRED | 转负=衰退预警 |
@@ -91,7 +91,7 @@ AI 文本摘要     https://wj624.github.io/us-world-economy-dashboard/llms.txt
 ## 架构
 
 ```
-fetch_data.py        # 三源抓取(并发/串行 + 当日TTL/增量缓存 + 重试 + 降级) + 21 面板 + 历史分位 → data.json
+fetch_data.py        # 三源抓取(并发/串行 + 当日TTL/增量缓存 + 重试 + 降级) + 22 面板 + 历史分位 → data.json
 template.html        # 通用 ECharts 渲染器（读 window.DATA，自动画各面板，含衰退阴影）
 build.py             # template.html + echarts + data.json 打包成单文件 index.html
 make_llm_summary.py  # data.json → llms.txt / snapshot.md / latest.json
