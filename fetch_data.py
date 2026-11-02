@@ -980,6 +980,77 @@ def prefetch_all():
     log(f"预取完成：{okc}/{total} 有数据")
 
 
+def _mean(xs):
+    xs = [x for x in xs if x is not None]
+    return sum(xs) / len(xs) if xs else None
+
+
+def build_clock():
+    """美林投资时钟：由「增长方向 × 通胀方向」定四象限（方向=动量，非水平）。"""
+    g_sig, g_votes = [], []
+    gdp = fetch_fred("A191RL1Q225SBEA")
+    if len(gdp) >= 4:
+        a = _mean([v for _, v in gdp[-2:]]); b = _mean([v for _, v in gdp[-4:-2]])
+        if a is not None and b is not None:
+            dv = a - b
+            g_sig.append(("GDP增速", "↑" if dv >= 0 else "↓", f"近2季 {a:.1f} vs 前2季 {b:.1f}"))
+            g_votes.append(1 if dv >= 0 else -1)
+    un = fetch_fred("UNRATE")
+    if len(un) >= 4:
+        dv = un[-1][1] - un[-4][1]
+        g_sig.append(("失业率", "↑" if dv > 0 else "↓", f"3月 {dv:+.1f}pt"))
+        g_votes.append(-1 if dv > 0 else 1)
+    ic = fetch_fred("ICSA")
+    if len(ic) >= 60:
+        vals = [v for _, v in ic]
+        ma = [sum(vals[i - 3:i + 1]) / 4 for i in range(3, len(vals))]
+        if len(ma) >= 53 and ma[-53]:
+            dv = (ma[-1] / ma[-53] - 1) * 100
+            g_sig.append(("初请失业金", "↑" if dv > 0 else "↓", f"4周均同比 {dv:+.0f}%"))
+            g_votes.append(-1 if dv > 0 else 1)
+    se = fetch_fred("UMCSENT")
+    if len(se) >= 4:
+        dv = se[-1][1] - se[-4][1]
+        g_sig.append(("消费者信心", "↑" if dv >= 0 else "↓", f"3月 {dv:+.1f}"))
+        g_votes.append(1 if dv >= 0 else -1)
+    growth = round(sum(g_votes) / len(g_votes), 2) if g_votes else 0.0
+
+    i_sig, i_votes = [], []
+    cpi_y = yoy(fetch_fred("CPIAUCSL"))
+    if len(cpi_y) >= 4:
+        dv = cpi_y[-1][1] - cpi_y[-4][1]
+        i_sig.append(("CPI同比", "↑" if dv >= 0 else "↓", f"3月 {dv:+.2f}pt"))
+        i_votes.append(1 if dv >= 0 else -1)
+    pce_y = yoy(fetch_fred("PCEPILFE"))
+    if len(pce_y) >= 4:
+        dv = pce_y[-1][1] - pce_y[-4][1]
+        i_sig.append(("核心PCE", "↑" if dv >= 0 else "↓", f"3月 {dv:+.2f}pt"))
+        i_votes.append(1 if dv >= 0 else -1)
+    be = fetch_fred("T5YIE")
+    if len(be) >= 22:
+        dv = be[-1][1] - be[-22][1]
+        i_sig.append(("5年通胀预期", "↑" if dv >= 0 else "↓", f"1月 {dv:+.2f}pt"))
+        i_votes.append(1 if dv >= 0 else -1)
+    infl = round(sum(i_votes) / len(i_votes), 2) if i_votes else 0.0
+
+    if growth >= 0 and infl < 0:
+        phase, en, color, asset = "复苏", "Recovery", "#27ae60", "股票"
+    elif growth >= 0 and infl >= 0:
+        phase, en, color, asset = "过热", "Overheat", "#c0392b", "大宗商品"
+    elif growth < 0 and infl >= 0:
+        phase, en, color, asset = "滞胀", "Stagflation", "#e67e22", "现金 / 短债"
+    else:
+        phase, en, color, asset = "衰退", "Recession", "#2980b9", "债券"
+
+    note = f"增长{'↑' if growth >= 0 else '↓'}、通胀{'↑' if infl >= 0 else '↓'} → {phase}期，{asset}占优"
+    conf = round((abs(growth) + abs(infl)) / 2, 2)
+    sig = [{"name": n, "arrow": a, "detail": d} for n, a, d in (g_sig + i_sig)]
+    return {"phase": phase, "en": en, "color": color, "asset": asset,
+            "growth": growth, "inflation": infl, "confidence": conf,
+            "note": note, "signals": sig,
+            "updated": cpi_y[-1][0] if cpi_y else None}
+
+
 def _al(level, text):
     return {"on": level in ("high", "mid"), "level": level, "text": text}
 
@@ -1118,6 +1189,7 @@ def main():
         for p in g["panels"]:
             p["alert"] = _alert_for(p)
     summary = _compute_summary(groups)
+    clock = build_clock()
 
     # 衰退阴影带
     bands = []
@@ -1139,7 +1211,7 @@ def main():
     out = {
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "latest": latest, "asof": asof, "groups": groups, "bands": bands,
-        "summary": summary,
+        "summary": summary, "clock": clock,
         "meta": {"title": "美股 / 世界经济温度计",
                  "subtitle": "13 个面板 · 估值 / 情绪 / 全球 / 宏观",
                  "sources": ["FRED", "Yahoo Finance", "Stooq", "multpl(可选)"]},

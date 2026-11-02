@@ -21,6 +21,19 @@
   header.top .sub{opacity:.85;font-size:13px}
   header.top .meta{margin-top:12px;font-size:12px;opacity:.9;display:flex;gap:16px;flex-wrap:wrap}
   header.top .meta b{font-weight:600}
+  .clock{display:flex;gap:14px;align-items:center;margin-top:14px;padding:12px 14px;border-radius:12px;
+         background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14)}
+  .mclock-wrap{display:flex;flex-direction:column;align-items:center;flex:none}
+  .mclock{width:88px;height:88px;display:block}
+  .mc-cap{font-size:9px;opacity:.6;margin-top:2px}
+  .clock .cbinfo{min-width:0}
+  .ck-title{font-size:14px;font-weight:700}
+  .ck-line{font-size:12px;margin-top:5px;opacity:.92}
+  .ck-line b{color:#fff}
+  .ck-line .conf{opacity:.62;font-size:11px;margin-left:8px}
+  .ck-sig{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .ck-sig span{font-size:10.5px;background:rgba(255,255,255,.12);border-radius:20px;padding:2px 8px}
+  @media(max-width:560px){.clock{align-items:flex-start}}
   .group{margin:26px 0 8px;display:flex;align-items:center;gap:10px}
   .group h2{margin:0;font-size:17px;color:var(--ink)}
   .group .bar{height:3px;flex:1;background:linear-gradient(90deg,var(--blue),transparent);border-radius:2px}
@@ -89,6 +102,7 @@
       <span>最新行情日：<b id="t-latest">—</b></span>
       <span>数据源：<b id="t-src">FRED · Yahoo Finance</b></span>
     </div>
+    <div id="clock"></div>
   </header>
   <div id="summary"></div>
   <div id="root"></div>
@@ -109,6 +123,39 @@
   document.getElementById('t-sub').textContent  = (DATA.meta&&DATA.meta.subtitle)||'';
   document.getElementById('t-updated').textContent = DATA.updated||'—';
   document.getElementById('t-latest').textContent  = DATA.latest||'—';
+
+  function renderClock(c){
+    if(!c || !c.phase) return;
+    var el=document.getElementById('clock'); if(!el) return;
+    var g=Math.max(-1,Math.min(1,c.growth||0)), i=Math.max(-1,Math.min(1,c.inflation||0));
+    var dx=(60+g*42).toFixed(1), dy=(60-i*42).toFixed(1);
+    var svg='<svg class="mclock" viewBox="0 0 120 120">'+
+      '<path d="M60,60 L60,10 A50,50 0 0 1 110,60 Z" fill="#c0392b" opacity="0.14"/>'+
+      '<path d="M60,60 L10,60 A50,50 0 0 1 60,10 Z" fill="#e67e22" opacity="0.14"/>'+
+      '<path d="M60,60 L60,110 A50,50 0 0 1 10,60 Z" fill="#2980b9" opacity="0.14"/>'+
+      '<path d="M60,60 L110,60 A50,50 0 0 1 60,110 Z" fill="#27ae60" opacity="0.14"/>'+
+      '<circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1"/>'+
+      '<line x1="10" y1="60" x2="110" y2="60" stroke="rgba(255,255,255,.22)"/>'+
+      '<line x1="60" y1="10" x2="60" y2="110" stroke="rgba(255,255,255,.22)"/>'+
+      '<text x="88" y="33" font-size="8" fill="#ffd9d2" text-anchor="middle">过热</text>'+
+      '<text x="32" y="33" font-size="8" fill="#ffe1c2" text-anchor="middle">滞胀</text>'+
+      '<text x="32" y="93" font-size="8" fill="#cfe3ff" text-anchor="middle">衰退</text>'+
+      '<text x="88" y="93" font-size="8" fill="#c8f0d8" text-anchor="middle">复苏</text>'+
+      '<circle cx="'+dx+'" cy="'+dy+'" r="5.5" fill="'+(c.color||'#fff')+'" stroke="#fff" stroke-width="1.5"/>'+
+      '</svg>';
+    var sig=(c.signals||[]).map(function(s){
+      return '<span title="'+esc(s.detail||'')+'">'+esc(s.name)+' '+esc(s.arrow||'')+'</span>';
+    }).join('');
+    el.innerHTML='<div class="clock">'+
+      '<div class="mclock-wrap">'+svg+'<div class="mc-cap">增长→　通胀↑</div></div>'+
+      '<div class="cbinfo">'+
+        '<div class="ck-title">🕐 美林时钟 · <b style="color:'+(c.color||'#fff')+'">'+esc(c.phase)+' '+esc(c.en||'')+'</b></div>'+
+        '<div class="ck-line">'+esc(c.note||'')+'<span class="conf">置信度 '+Math.round((c.confidence||0)*100)+'%</span></div>'+
+        '<div class="ck-sig">'+sig+'</div>'+
+      '</div></div>';
+  }
+
+  renderClock(DATA.clock);
 
   function fmt(v,nd){
     if(v==null||isNaN(v)) return '—';
