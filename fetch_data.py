@@ -32,6 +32,7 @@ CTX.check_hostname = False
 CTX.verify_mode = ssl.CERT_NONE
 
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "").strip()
+NASDAQ_API_KEY = os.environ.get("NASDAQ_API_KEY", "").strip()
 TRIES = 2
 HTTP_TIMEOUT = 15          # 单请求上限；FRED 串行、价格并发，整体耗时有界
 RAW = {}                   # 预取缓存：('fred',id)/('price',name)/('multpl',ep) -> 列表
@@ -565,12 +566,60 @@ def build_real_rate():
                       note="实际利率转正且走高=金融环境收紧，压制估值；负值=宽松利好股市。")
 
 
+def fetch_nasdaq_cape():
+    """Nasdaq Data Link: MULTPL/SHILLER_PE_RATIO_MONTH（月度席勒 PE/CAPE）-> [(date, cape)]。"""
+    cache_name = "nasdaq_cape.csv"
+    ttl_key = "nasdaq:cape"
+    cached = _read_pairs(cache_name)
+    if not NASDAQ_API_KEY:
+        return cached
+    if cached and _ttl_hit(ttl_key):
+        return cached
+    url = ("https://data.nasdaq.com/api/v3/datasets/MULTPL/SHILLER_PE_RATIO_MONTH.csv"
+           f"?api_key={NASDAQ_API_KEY}")
+    try:
+        raw = http_text(url, tries=2, timeout=30)
+        out = []
+        for line in raw.splitlines()[1:]:
+            p = line.split(",")
+            if len(p) < 2:
+                continue
+            d = p[0].strip()
+            try:
+                v = float(p[1])
+            except ValueError:
+                continue
+            if len(d) == 10:          # YYYY-MM-DD
+                out.append((d, v))
+        if out:
+            out.sort()
+            save_cache(cache_name, _dumps_pairs(out))
+            _ttl_mark(ttl_key)
+            return out
+    except Exception as e:
+        log(f"    Nasdaq CAPE 失败({e})")
+    if cached:
+        log(f"    Nasdaq CAPE 用缓存兜底（末 {cached[-1][0]}）")
+    return cached
+
+
 def build_cape():
-    """M1b 估值水平：巴菲特指标 ≈ 股权总市值 / GDP（FRED 资金流量表，季度·4季平滑）。
-    真实席勒 CAPE 的免费源均不可靠（multpl 拦 / yale 断流 / CDN 陈旧 / Nasdaq 需 key），
-    故用这条 100% 稳定的 FRED 指标做「整体估值高低」的替补，同样衡量贵不贵。"""
-    cap = fetch_fred("NCBEILQ027S")   # 企业股权市值（百万美元，季度）
-    gdp = sorted(fetch_fred("GDP"))   # GDP（十亿美元，季度）
+    """M1b 席勒 CAPE（Nasdaq Data Link 月度，真实 CAPE）。"""
+    pairs = fetch_nasdaq_cape()
+    if not pairs:
+        return None
+    return panel_line("M1b", "席勒 CAPE（周期调整市盈率）",
+                      "经通胀调整的十年平均盈利口径，长期估值",
+                      pairs, since="2005-01-01", unit="倍", pct_baseline="1990-01-01",
+                      refs=[{"value": 30, "label": "高估(>30)", "color": "#c0392b"},
+                            {"value": 15, "label": "偏低(<15)", "color": "#27ae60"}],
+                      note=">30 高估(2000年达44)；<15 历史极低。来源：Nasdaq Data Link / Shiller。")
+
+
+def build_buffett_m1c():
+    """M1c 巴菲特指标 ≈ 股权总市值 / GDP（FRED 资金流量表，季度·4季平滑）。"""
+    cap = fetch_fred("NCBEILQ027S")
+    gdp = sorted(fetch_fred("GDP"))
     if not cap or not gdp:
         return None
     pairs = []; j = 0; cur = None
@@ -582,12 +631,12 @@ def build_cape():
     if len(pairs) < 40:
         return None
     sm = [(pairs[i][0], sum(p[1] for p in pairs[i - 3:i + 1]) / 4) for i in range(3, len(pairs))]
-    return panel_line("M1b", "巴菲特指标（股权市值 / GDP）",
+    return panel_line("M1c", "巴菲特指标（股权市值 / GDP）",
                       "整体估值水平，美联储资金流量表口径（季度·4季平滑）",
                       sm, since="2005-01-01", unit="%", pct_baseline="1990-01-01",
                       refs=[{"value": 200, "label": "偏高(>200%)", "color": "#c0392b"},
                             {"value": 120, "label": "长期均值(~120%)", "color": "#7f8c8d"}],
-                      note="股权总市值/GDP；越高越贵。当前处历史最高分位。口径比常见 Buffett 略宽，重在趋势与分位。")
+                      note="股权总市值/GDP；越高越贵。口径比常见 Buffett 略宽，重在趋势与分位。")
 
 
 def _parse_multpl_text(raw):
@@ -995,7 +1044,9 @@ def _num(p, key="current"):
 ALERT_RULES = {
     "M1": lambda p: _al("high", f"纳指长期估值偏贵 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 20
         else (_al("mid", f"纳指估值偏高 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 10 else None),
-    "M1b": lambda p: _al("high", f"巴菲特指标 {_num(p):.0f}%（高于200%）") if _num(p) is not None and _num(p) > 200 else None,
+    "M1b": lambda p: _al("high", f"CAPE {_num(p):.1f}（高于30）") if _num(p) is not None and _num(p) > 30
+        else (_al("mid", f"CAPE 偏高 {_num(p):.1f}") if _num(p) is not None and _num(p) > 25 else None),
+    "M1c": lambda p: _al("high", f"巴菲特指标 {_num(p):.0f}%（高于200%）") if _num(p) is not None and _num(p) > 200 else None,
     "M2": lambda p: _al("high", f"S&P 偏离5年线 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 15
         else (_al("mid", f"S&P 高于5年线 {_num(p):.1f}%") if _num(p) is not None and _num(p) > 10 else None),
     "M3": lambda p: _al("mid", f"实际利率偏紧 {_num(p):.2f}%") if _num(p) is not None and _num(p) > 2 else None,
@@ -1061,7 +1112,7 @@ def _compute_summary(groups):
         vs = [v for v in vals if isinstance(v, (int, float))]
         if vs:
             comps.append({"name": name, "score": round(sum(vs) / len(vs)), "w": w})
-    add("估值", [pct("M1"), pct("M2")], 0.35)
+    add("估值", [pct("M1"), pct("M2"), pct("M1b")], 0.35)
     add("情绪", [pct("M4")], 0.25)
     add("信用", [pct("M5")], 0.20)
     add("通胀", [pct("M11")], 0.20)
@@ -1092,7 +1143,7 @@ def main():
     groups = []; asof = {}; ok = 0
 
     plan = [
-        ("估值", [build_buffett, build_sp_anchor, build_real_rate, build_cape]),
+        ("估值", [build_buffett, build_sp_anchor, build_real_rate, build_cape, build_buffett_m1c]),
         ("情绪 / 风险", [build_vix, build_credit, build_curve, build_correlation,
                         build_vix_term, build_curve3m]),
         ("全球 / 世界经济", [build_global_map, build_dollar, build_commodities]),
