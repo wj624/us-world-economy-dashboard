@@ -1101,8 +1101,6 @@ def main():
     for gname, builders in plan:
         panels = []
         for b in builders:
-            if b is build_cape and not os.path.isdir(CACHE):
-                continue
             try:
                 p = b()
             except Exception as e:
