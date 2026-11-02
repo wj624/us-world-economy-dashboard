@@ -56,7 +56,8 @@ AI 文本摘要     https://wj624.github.io/us-world-economy-dashboard/llms.txt
 | **FRED**（美联储经济数据库） | 宏观 / 估值 / 情绪主力 | 免费 API key（`api.stlouisfed.org`）。政府站点，数据权威 |
 | **Yahoo Finance** | 美股/全球 ETF 与指数日线 | v8 chart API，无 key |
 | **Stooq** | 价格兜底 | CSV，无 key；Yahoo 被拦时自动切换 |
-| **multpl.com** | 席勒 CAPE（可选增强） | 拿不到自动跳过，不影响其它面板 |
+
+> 注：席勒 CAPE 的数据源（multpl / Shiller 官方 xls / Nasdaq Data Link）均因反爬墙或云 IP 拦截，无法在 CI 稳定自动更新，故用 **FRED 巴菲特指标（M1b）** 作为估值面板。
 
 > **重要（部署相关）**：`fredgraph.csv` 免 key 通道在 GitHub Actions 的云 IP 上可能被墙（实测超时），
 > 因此**务必在仓库 Secrets 里配置 `FRED_API_KEY`**，让脚本走官方 API 域名。价格类（M7/M9/M13）走 Yahoo/Stooq，Actions 实测可通。
