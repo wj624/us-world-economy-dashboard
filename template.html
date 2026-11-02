@@ -224,7 +224,7 @@
                    '<span class="psub">'+esc(p.subtitle||'')+'</span></div>';
     var badges=document.createElement('div'); badges.className='badges';
     var b='';
-    if(p.current!=null) b+='<span class="cur">'+fmt(p.current,p.decimals)+' <small>'+(p.unit||'')+'</small></span>';
+    if(p.current!=null) b+='<span class="cur">'+(p.nowcast?'≈':'')+fmt(p.current,p.decimals)+' <small>'+(p.unit||'')+'</small></span>';
     if(p.pct!=null)     b+='<span class="pct '+pctClass(p.pct)+'">分位 '+p.pct+'%</span>';
     badges.innerHTML=b; head.appendChild(badges);
     card.appendChild(head);
@@ -235,7 +235,10 @@
     var note=document.createElement('div'); note.className='note'; note.innerHTML=esc(p.note||'');
     card.appendChild(note);
     if(p.updated){ var u=document.createElement('div'); u.className='updated';
-                   u.textContent='数据截至 '+p.updated; card.appendChild(u); }
+                   u.textContent = p.nowcast
+                     ? ('数据截至 '+p.updated+'（≈估算；官方 '+(p.nowcast.base||'')+'）')
+                     : ('数据截至 '+p.updated);
+                   card.appendChild(u); }
     return card;
   }
 

@@ -566,7 +566,8 @@ def build_real_rate():
 
 
 def build_buffett_m1b():
-    """M1b 巴菲特指标 ≈ 股权总市值 / GDP（FRED 资金流量表，季度·4季平滑）。"""
+    """M1b 巴菲特指标 ≈ 股权总市值 / GDP（FRED 资金流量表，季度·4季平滑）。
+    官方市值为季度、滞后约一季度；再按标普 500 自该季至今的涨幅外推一个『当前估算(nowcast)』。"""
     cap = fetch_fred("NCBEILQ027S")
     gdp = sorted(fetch_fred("GDP"))
     if not cap or not gdp:
@@ -580,12 +581,34 @@ def build_buffett_m1b():
     if len(pairs) < 40:
         return None
     sm = [(pairs[i][0], sum(p[1] for p in pairs[i - 3:i + 1]) / 4) for i in range(3, len(pairs))]
-    return panel_line("M1b", "巴菲特指标（股权市值 / GDP）",
-                      "整体估值水平，美联储资金流量表口径（季度·4季平滑）",
-                      sm, since="2005-01-01", unit="%", pct_baseline="1990-01-01",
-                      refs=[{"value": 200, "label": "偏高(>200%)", "color": "#c0392b"},
-                            {"value": 120, "label": "长期均值(~120%)", "color": "#7f8c8d"}],
-                      note="股权总市值/GDP；越高越贵。口径比常见 Buffett 略宽，重在趋势与分位。")
+    p = panel_line("M1b", "巴菲特指标（股权市值 / GDP）",
+                   "整体估值水平，美联储资金流量表口径（季度·4季平滑）",
+                   sm, since="2005-01-01", unit="%", pct_baseline="1990-01-01",
+                   refs=[{"value": 200, "label": "偏高(>200%)", "color": "#c0392b"},
+                         {"value": 120, "label": "长期均值(~120%)", "color": "#7f8c8d"}],
+                   note="股权总市值/GDP；越高越贵。口径比常见 Buffett 略宽，重在趋势与分位。")
+
+    # nowcast：最新官方市值 × 标普涨幅，÷ 最新 GDP
+    sp = fetch_fred("SP500")
+    base_date, base_cap = cap[-1][0], cap[-1][1]
+    base_sp = None
+    for d, v in sp:
+        if d <= base_date:
+            base_sp = v
+        else:
+            break
+    if p and base_sp and sp:
+        factor = sp[-1][1] / base_sp
+        now_val = sm[-1][1] * factor          # 对图上最后一个平滑值按标普涨幅外推，图和数字一致
+        p["nowcast"] = {"value": round(now_val, 1), "asof": sp[-1][0],
+                        "base": base_date, "factor": round(factor, 3)}
+        p["current"] = round(now_val, 1)
+        p["pct"] = pct_of(now_val, sm, "1990-01-01")
+        p["updated"] = sp[-1][0]
+        p["dates"].append(sp[-1][0])
+        p["series"][0]["values"].append(round(now_val, 2))
+        p["note"] = p["note"] + f"　末点为按标普涨幅外推的估算（官方市值截至 {base_date[:7]}）。"
+    return p
 
 
 def _parse_multpl_text(raw):
