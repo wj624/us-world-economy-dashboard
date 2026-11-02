@@ -1,4 +1,2 @@
-# numpy：百分位/相关性；pandas+xlrd：解析 Shiller 官方 ie_data.xls 取 CAPE。
+# 仅需 numpy（百分位/相关性计算）。其余全部用 Python 标准库。
 numpy
-pandas
-xlrd
