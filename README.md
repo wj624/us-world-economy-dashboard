@@ -21,6 +21,7 @@
 | 用途 | 地址 |
 |---|---|
 | **看板主页**（人看） | <https://wj624.github.io/us-world-economy-dashboard/> |
+| **看板中心（聚合入口）** | <https://wj-dashboards.pages.dev/> |
 | **给 AI 的文本摘要**（推荐发这个） | <https://wj624.github.io/us-world-economy-dashboard/llms.txt> |
 | 同一份摘要的 Markdown 版 | <https://wj624.github.io/us-world-economy-dashboard/snapshot.md> |
 | 精简机器数据（约 4KB） | <https://wj624.github.io/us-world-economy-dashboard/latest.json> |
