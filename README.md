@@ -127,6 +127,69 @@ python make_llm_summary.py           # → llms.txt / snapshot.md / latest.json
 2. Settings → Secrets and variables → Actions 加 `FRED_API_KEY`（**推荐/必要**，见数据源说明）。
 3. Actions 里手动跑一次「每日自动更新看板」，即生成真实数据并部署。
 
+## 给 AI 的维护提示词
+
+> 把下面「提示词」整段复制给 AI 即可接手维护；前面两节是「哪里容易改漏」，人也可以先看。
+
+### 仓库速览
+
+| 项 | 内容 |
+| --- | --- |
+| 用途 | 美股 / 世界经济 **28 面板**温度计，产出单文件自包含 HTML 看板 |
+| 抓数 + 指标计算 | `fetch_data.py`（约 54 KB，一个文件承担全部三源抓取与全部面板指标） |
+| 渲染 | `template.html`（**通用** ECharts 渲染器，读 `window.DATA` 自动画图）+ `build.py` → `index.html` |
+| AI 摘要 | `make_llm_summary.py` → `llms.txt` / `snapshot.md` / `latest.json` |
+| 调度 | `.github/workflows/update.yml`，`cron: '30 22 * * *'`（UTC）= 北京 06:30 |
+| 依赖 | `numpy`（其余全用标准库） |
+| 密钥 | `FRED_API_KEY`（**强烈建议配置**，见坑 1） |
+| 产物（勿手改） | `index.html` / `llms.txt` / `snapshot.md` / `latest.json` / `version.txt` |
+
+### 改代码前必须知道的三个坑
+
+1. **不配 `FRED_API_KEY` 会大面积缺数。** `fetch_data.py` 在没有 key 时会退回免 key 的
+   `fredgraph.csv` 通道，而该通道在 GitHub Actions 的云 IP 上实测**会被墙/超时**（README 数据源一节也写了）。
+   FRED 是 28 个面板里绝大多数的主源，缺 key 等于看板半瘫。
+2. **`cache/` 目录别删。** 里面是每条序列的 CSV 快照（`fred_*.csv` / `yahoo_*.csv`），
+   抓取失败时脚本回退读它 —— 这是本项目唯一的降级手段。删掉就只剩「抓不到就空着」。
+3. **新增 / 改名面板要动两处。** 面板本体在 `fetch_data.py`（`panel_line(...)` 系列 + 底部
+   综合温度计的 `add("估值", [...], 0.35)` 权重）；而 `make_llm_summary.py` 的 `reading(p)`
+   决定该面板在 `llms.txt` / 邮件摘要里怎么用一句话判读。**只改前者不会报错**，但 AI 摘要里那一项会缺失或说不清。
+
+### 提示词（复制这段给 AI）
+
+```text
+你在维护 GitHub 仓库 wj624/us-world-economy-dashboard —— 一个美股/世界经济 28 面板指标看板。
+先读 README.md（「数据源」与「给 AI 的维护提示词」两节）。
+
+【流水线】fetch_data.py → data.json → build.py → 单文件 index.html；
+make_llm_summary.py → llms.txt / snapshot.md / latest.json；GitHub Actions 每天 UTC 22:30 自动跑。
+
+【数据源与降级顺序】
+- FRED（api.stlouisfed.org，需 FRED_API_KEY）：宏观/估值/情绪主力。
+  无 key 时会退回 fredgraph.csv 免 key 通道，但该通道在 Actions 云 IP 上会被墙 —— 所以务必保留 key 逻辑。
+- Yahoo Finance v8 chart API（无 key）：美股/全球 ETF 与指数日线。多个 host 轮换，tries=1、timeout=8。
+- Stooq（无 key，CSV）：Yahoo 被拦时的价格兜底。
+- 三源之外的第四层是读 cache/ 下的 CSV 快照。改抓取逻辑时不要破坏这条回退链。
+
+【铁律】
+1. 不要删 cache/ 目录，也不要让抓取失败变成「写空值」——失败应当回退到 cache，而不是覆盖成 null。
+2. index.html / llms.txt / snapshot.md / latest.json / version.txt 都是构建产物，不要手改。
+3. 新增或改名面板时：fetch_data.py 加面板 + 检查底部综合温度计的权重 add(...) +
+   同步 make_llm_summary.py 的 reading()（决定 AI 摘要里的判读句）。漏了不报错，但摘要会缺项。
+4. 分位（percentile）是本看板的核心读数，改指标口径会整体挪动分位；
+   若换了数据源导致水平值变化，阈值与判读文字必须重新设定（否则「高位/低位」的灯会一直错着亮）。
+5. 衰退阴影来自 FRED USREC 官方区间，不要用估算替代。
+
+【验证】
+- 本地：pip install -r requirements.txt && export FRED_API_KEY=xxx && python fetch_data.py
+  → python build.py → python make_llm_summary.py
+  检查 data.json 里每条序列的最新日期是否推进、有没有整条为空的序列。
+- 离线验证模板渲染（不联网）：python make_sample.py && python build.py
+- 云端：Actions 手动跑「每日自动更新看板」，确认抓数步骤无 timeout、提交里有 index.html 与 llms.txt。
+
+【收尾】改了数据源/面板数量/调度，同步更新 README 的「数据源」「28 个面板」「架构」三节。
+```
+
 ## 免责声明
 
 仅为公开市场数据的可视化复现，用于观察与学习，**不构成任何投资建议**。
