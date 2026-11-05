@@ -27,9 +27,7 @@ os.makedirs(CACHE, exist_ok=True)
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-CTX = ssl.create_default_context()
-CTX.check_hostname = False
-CTX.verify_mode = ssl.CERT_NONE
+CTX = ssl.create_default_context()  # 保留默认 TLS 证书校验
 
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "").strip()
 TRIES = 2
@@ -107,8 +105,8 @@ def load_cache(name):
         if os.path.exists(p):
             with open(p, encoding="utf-8") as f:
                 return f.read()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"    [WARN] 缓存读取失败 {name}: {e}")
     return None
 
 
@@ -116,8 +114,10 @@ def save_cache(name, text):
     try:
         with open(_cpath(name), "w", encoding="utf-8") as f:
             f.write(text)
-    except Exception:
-        pass
+        return True
+    except Exception as e:
+        print(f"    [WARN] 缓存写入失败 {name}: {e}")
+        return False
 
 
 # ---- 当日 TTL + 增量缓存 ----
@@ -273,18 +273,27 @@ def fetch_fred(series_id):
                 log(f"    FRED {series_id} 用缓存兜底")
                 return cached
 
-    if not cached:                           # 仅首次（无缓存）才尝试 fredgraph 全量
+    # 免 key 通道：只要「今天没抓过」就联网；缓存只作兜底，不能用「有缓存」短路
+    # （README 铁律：失败回退 cache，绝不写空值；key 逻辑保留在上方分支）
+    if not _ttl_hit(ttl_key):
         try:
-            raw = http_text(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd=1990-01-01")
+            cosd = _minus_days(cached[-1][0], 10) if cached else "1990-01-01"
+            raw = http_text(
+                f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd={cosd}"
+            )
             out = _parse_fred_csv(raw)
             if out:
-                save_cache(cache_name, _dumps_pairs(out))
+                merged = _merge_pairs(cached, out) if cached else out
+                save_cache(cache_name, _dumps_pairs(merged))
                 _ttl_mark(ttl_key)
-                return out
+                return merged
+            log(f"    FRED {series_id} fredgraph 返回空，沿用缓存")
         except Exception as e:
-            log(f"    FRED {series_id} 失败({e})")
+            log(f"    FRED {series_id} fredgraph 失败({e})，沿用缓存")
 
-    return cached
+    if cached:
+        return cached
+    raise RuntimeError(f"FRED {series_id} 首次抓取失败且无缓存可用")
 
 
 def fetch_yahoo(symbol, rng="5y"):

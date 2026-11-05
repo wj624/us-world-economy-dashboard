@@ -23,9 +23,9 @@
 | **看板主页**（人看） | <https://wj624.github.io/us-world-economy-dashboard/> |
 | **看板中心（聚合入口）** | <https://wj-dashboards.pages.dev/> |
 | **给 AI 的文本摘要**（推荐发这个） | <https://wj624.github.io/us-world-economy-dashboard/llms.txt> |
-| 同一份摘要的 Markdown 版 | <https://wj624.github.io/us-world-economy-dashboard/snapshot.md> |
-| 精简机器数据（约 4KB） | <https://wj624.github.io/us-world-economy-dashboard/latest.json> |
-| 全量机器数据（全历史，约数百 KB） | <https://wj624.github.io/us-world-economy-dashboard/data.json> |
+| 同一份内容的另一文件名（`llms.txt` 与 `snapshot.md` 内容完全相同，供不同下游使用） | <https://wj624.github.io/us-world-economy-dashboard/snapshot.md> |
+| 精简机器数据 | <https://wj624.github.io/us-world-economy-dashboard/latest.json> |
+| 全量机器数据（全历史） | <https://wj624.github.io/us-world-economy-dashboard/data.json> |
 | 源码仓库 | <https://github.com/wj624/us-world-economy-dashboard> |
 
 一次性复制全部地址：
@@ -40,7 +40,7 @@ AI 文本摘要     https://wj624.github.io/us-world-economy-dashboard/llms.txt
 ```
 
 > 三个给 AI / 机器读的文件（`llms.txt` / `snapshot.md` / `latest.json`）由 `make_llm_summary.py`
-> 每天从 `data.json` 自动生成。看板本体是 1MB 的单文件 HTML，数值在 JS 里、图是 canvas，
+> 每天从 `data.json` 自动生成。看板本体是 MB 级的自包含单文件 HTML（体积以仓库实际文件为准），数值在 JS 里、图是 canvas，
 > AI 的网页抓取器读不到，所以单独产出纯文本摘要——**发给大模型就用 `llms.txt`**。
 
 ## 生成效果
@@ -62,8 +62,8 @@ AI 文本摘要     https://wj624.github.io/us-world-economy-dashboard/llms.txt
 
 > 注：席勒 CAPE 的数据源（multpl / Shiller 官方 xls / Nasdaq Data Link）均因反爬墙或云 IP 拦截，无法在 CI 稳定自动更新，故用 **FRED 巴菲特指标（M1b）** 作为估值面板。
 
-> **重要（部署相关）**：`fredgraph.csv` 免 key 通道在 GitHub Actions 的云 IP 上可能被墙（实测超时），
-> 因此**务必在仓库 Secrets 里配置 `FRED_API_KEY`**，让脚本走官方 API 域名。价格类（M7/M9/M13）走 Yahoo/Stooq，Actions 实测可通。
+> **重要（部署相关）**：FRED 有两条通道——官方 API（配 `FRED_API_KEY` 时走）与 `fredgraph.csv` 免 key 通道（不配 key 时的默认）；
+> 后者在 GitHub Actions 的云 IP 上实测常被墙/超时，因此**强烈建议在仓库 Secrets 里配置 `FRED_API_KEY`**。价格类（M7/M9/M13）走 Yahoo/Stooq，Actions 实测可通。
 
 ## 28 个面板（六大板块）
 
@@ -103,7 +103,7 @@ AI 文本摘要     https://wj624.github.io/us-world-economy-dashboard/llms.txt
 ```
 fetch_data.py        # 三源抓取(并发/串行 + 当日TTL/增量缓存 + 重试 + 降级) + 28 面板 + 历史分位 → data.json
 template.html        # 通用 ECharts 渲染器（读 window.DATA，自动画各面板，含衰退阴影）
-build.py             # template.html + echarts + data.json 打包成单文件 index.html
+build.py             # template.html + echarts + 运行时生成的 data.js 打包成单文件 index.html
 make_llm_summary.py  # data.json → llms.txt / snapshot.md / latest.json
 cache/               # 各源原始数据缓存（失败回退用）
 .github/workflows/update.yml  # 每日 22:30 UTC(=北京 06:30) 自动跑
@@ -119,12 +119,12 @@ python build.py                      # → index.html（单文件）
 python make_llm_summary.py           # → llms.txt / snapshot.md / latest.json
 ```
 
-离线验证模板渲染：`python make_sample.py && python build.py`（用合成样例数据，不联网）。
+离线验证模板渲染：`python make_sample.py && python build.py`（用合成样例数据，不联网）。样例输出到 `sample_data.json`，不会覆盖生产 `data.json`。
 
 ## 部署（GitHub Pages）
 
 1. 仓库 Settings → Pages → Source 选 `main` 分支 `/ (root)`。
-2. Settings → Secrets and variables → Actions 加 `FRED_API_KEY`（**推荐/必要**，见数据源说明）。
+2. Settings → Secrets and variables → Actions 加 `FRED_API_KEY`（**强烈建议**：两条通道都在，不配则走 `fredgraph.csv` 免 key 通道，但该通道在 Actions 云 IP 上常被墙/超时，见数据源说明）。
 3. Actions 里手动跑一次「每日自动更新看板」，即生成真实数据并部署。
 
 ## 给 AI 的维护提示词
@@ -136,19 +136,20 @@ python make_llm_summary.py           # → llms.txt / snapshot.md / latest.json
 | 项 | 内容 |
 | --- | --- |
 | 用途 | 美股 / 世界经济 **28 面板**温度计，产出单文件自包含 HTML 看板 |
-| 抓数 + 指标计算 | `fetch_data.py`（约 54 KB，一个文件承担全部三源抓取与全部面板指标） |
+| 抓数 + 指标计算 | `fetch_data.py`（单文件承担全部三源抓取与全部面板指标） |
 | 渲染 | `template.html`（**通用** ECharts 渲染器，读 `window.DATA` 自动画图）+ `build.py` → `index.html` |
 | AI 摘要 | `make_llm_summary.py` → `llms.txt` / `snapshot.md` / `latest.json` |
 | 调度 | `.github/workflows/update.yml`，`cron: '30 22 * * *'`（UTC）= 北京 06:30 |
 | 依赖 | `numpy`（其余全用标准库） |
-| 密钥 | `FRED_API_KEY`（**强烈建议配置**，见坑 1） |
+| 密钥 | `FRED_API_KEY`（**强烈建议配置**：两条通道都在，不配则走 `fredgraph.csv` 免 key 通道，但该通道在 Actions 云 IP 上常被墙/超时） |
 | 产物（勿手改） | `index.html` / `llms.txt` / `snapshot.md` / `latest.json` / `version.txt` |
 
 ### 改代码前必须知道的三个坑
 
-1. **不配 `FRED_API_KEY` 会大面积缺数。** `fetch_data.py` 在没有 key 时会退回免 key 的
-   `fredgraph.csv` 通道，而该通道在 GitHub Actions 的云 IP 上实测**会被墙/超时**（README 数据源一节也写了）。
-   FRED 是 28 个面板里绝大多数的主源，缺 key 等于看板半瘫。
+1. **免 key 且已有缓存时，脚本以「有缓存」短路、永不联网，数据静默冻结。** 不配 key 时走免 key 的
+   `fredgraph.csv` 通道，该通道在 GitHub Actions 云 IP 上实测**会被墙/超时**；旧逻辑拿到缓存就跳过联网，
+   数值看着正常却再不更新。现已修成「按当日 TTL 判断是否需要联网、缓存只作兜底」（依据：`fetch_data.py`
+   `fetch_fred()` 的 `_ttl_hit()` 当日 TTL 判定），仍**强烈建议配置 `FRED_API_KEY`**；**不要删 `cache/`**（见坑 2）。
 2. **`cache/` 目录别删。** 里面是每条序列的 CSV 快照（`fred_*.csv` / `yahoo_*.csv`），
    抓取失败时脚本回退读它 —— 这是本项目唯一的降级手段。删掉就只剩「抓不到就空着」。
 3. **新增 / 改名面板要动两处。** 面板本体在 `fetch_data.py`（`panel_line(...)` 系列 + 底部

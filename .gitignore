@@ -9,3 +9,5 @@ yahoo_log.txt
 _jscheck.js
 
 push_all.py
+# 离线验证样例输出（make_sample.py），不覆盖生产 data.json
+sample_data.json
